@@ -1,5 +1,11 @@
 # MANIFEST – OCR Gemini Pipeline
 
+## RULES (dla AI / PR)
+1) Nie edytuj plików w `legacy/` (tylko referencja).
+2) Nowy kod trafia wyłącznie do `src/ocr_gemini/`.
+3) Każde zadanie ma wskazać dokładnie 1–3 pliki do zmiany.
+4) PR nie może mieszać refaktoru i zmian logiki (oddzielne commity).
+
 ## Gdzie co jest
 - src/ocr_gemini/cli.py
   - tylko argparse + wejście do programu
