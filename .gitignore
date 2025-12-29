@@ -1,8 +1,14 @@
-.venv/
+# Python
 __pycache__/
 *.pyc
+*.pyo
+
+# Editable installs
+*.egg-info/
+
+# Virtualenv
+.venv/
+
+# OCR outputs / runtime data
 ocr_out/
-ocr_debug/
-import_from_old/**/__pycache__/
-import_from_old/.venv/
-.DS_Store
+
