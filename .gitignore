@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+ocr_out/
+ocr_debug/
+import_from_old/**/__pycache__/
+import_from_old/.venv/
+.DS_Store
