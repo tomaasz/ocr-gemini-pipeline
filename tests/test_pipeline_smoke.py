@@ -109,6 +109,7 @@ def test_pipeline_smoke(monkeypatch, tmp_path: Path):
 
     # sanity-check danych wpisu
     entry = fake_db.entries[0]
-    assert entry["entry_text"].startswith("PLACEHOLDER")
+    assert entry["entry_text"]
+    assert "OCR" in entry["entry_text"]
     assert "outputs" in entry["entry_json"]
     assert entry["entry_json"]["ocr"]["stage"] == "1.3"
