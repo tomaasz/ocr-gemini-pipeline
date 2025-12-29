@@ -20,7 +20,6 @@ nie przejdzie pełnej stabilizacji.
 ## 2) Produkcja — stan obecny (`ocr-gemini`)
 
 ### 2.1 systemd
-
 - Unit: `gemini-ocr.service`
 - ExecStart: `/usr/local/bin/gemini-ocr-run.sh`
 - WorkingDirectory: `/home/tomaasz/projects/ocr-gemini`

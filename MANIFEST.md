@@ -24,31 +24,34 @@ oraz przypadkowemu naruszeniu działającej produkcji.
    - refaktor → bez zmiany zachowania,
    - zmiana logiki → bez kosmetyki kodu „przy okazji”.
 
-5) **Źródło prawdy produkcji jest POZA tym repo**  
-   Produkcja działa z osobnego repo (`ocr-gemini`) + systemd.
+5) **Produkcja jest poza tym repo**  
+   Produkcja działa z osobnego repo (`ocr-gemini`) + systemd (`gemini-ocr.service`).
    To repo jest rozwijane równolegle i bezpiecznie.
 
 ---
 
 ## Aktualny stan modularizacji (fakty)
 
-- **Stage 1 – DONE**
-  - `config.py` (timeouts, stałe)
-  - `db.py` (PostgreSQL, upsert document/entry)
-  - `metrics.py` (DocumentMetrics)
-  - pakiet zainstalowany jako `pip install -e .`
+### Stage 1 — DONE
+- `config.py` (timeouts/stałe)
+- `db.py` (PostgreSQL: upsert `ocr_document`, `ocr_entry`)
+- `metrics.py` (`DocumentMetrics`)
+- pakiet w venv zainstalowany jako `pip install -e .`
 
-- **Stage 1.2 – DONE**
-  - `files.py` (discovery + sha256, streaming, deterministic)
-  - `output.py` (zapisy txt/json/meta do out-root)
+### Stage 1.2 — DONE
+- `files.py` (discovery + sha256, streaming `os.scandir`, deterministic order)
+- `output.py` (zapis `result.txt`, `result.json`, `meta.json` do `OCR_OUT_ROOT`)
 
-- **Stage 1.3 – NEXT**
-  - `pipeline.py` (orkiestracja bez UI: discovery → DB → output)
+### Stage 1.3 — DONE (bez UI)
+- `pipeline.py` (orkiestracja bez UI: discovery → DB → output → DB)
+- Smoke test potwierdzony:
+  - uruchomienie: `OCR_LIMIT=1 python -m ocr_gemini.pipeline`
+  - wynik: `processed: 1` + wpis w DB + zapis out-root
 
-- **Stage 2 – LATER**
-  - `ui/actions.py`
-  - `ui/extract.py`
-  - integracja Playwright / Gemini UI
+### Stage 2 — NEXT
+- `ui/actions.py` (Playwright: upload/paste/send/wait/cleanup)
+- `ui/extract.py` (wyciąganie tekstu z DOM)
+- podpięcie UI do `pipeline.py` w miejscu placeholdera OCR
 
 ---
 
@@ -62,9 +65,10 @@ oraz przypadkowemu naruszeniu działającej produkcji.
   - orkiestracja:
     - iteracja plików
     - statusy w DB
-    - retry
+    - retry (docelowo)
     - integracja modułów
-  - **bez kodu UI**
+  - **bez kodu UI** (Stage 1.3)
+  - miejsce na wpięcie UI (Stage 2)
 
 - `src/ocr_gemini/config.py`
   - konfiguracja runtime (timeouts, stałe)
@@ -96,8 +100,6 @@ oraz przypadkowemu naruszeniu działającej produkcji.
 - Zmiany discovery/output → `files.py`, `output.py`
 - Zmiany sterujące → `pipeline.py`
 - Zmiany CLI → `cli.py`
-
-Nie edytuj `pipeline.py` i `cli.py`, jeśli nie jest to konieczne.
 
 ---
 
