@@ -43,8 +43,6 @@ cd ~/projects/ocr-gemini-pipeline
   - serializacja JSON
   - format string (`__str__`)
 
----
-
 ### Smoke tests (orkiestracja bez DB / UI)
 
 - `tests/test_pipeline_smoke.py`
