@@ -109,6 +109,22 @@ def test_pipeline_smoke(monkeypatch, tmp_path: Path):
 
     # sanity-check danych wpisu
     entry = fake_db.entries[0]
-    assert entry["entry_text"].startswith("PLACEHOLDER")
+
+    # 1) tekst musi istnieć i wyglądać jak wynik OCR (FakeEngine też powinien dawać "OCR")
+    assert entry.get("entry_text")
+    assert isinstance(entry["entry_text"], str)
+    assert "OCR" in entry["entry_text"]
+
+    # 2) JSON wpisu musi istnieć i zawierać outputs (kontrakt pipeline)
+    assert "entry_json" in entry
+    assert isinstance(entry["entry_json"], dict)
     assert "outputs" in entry["entry_json"]
-    assert entry["entry_json"]["ocr"]["stage"] == "1.3"
+
+    # 3) sekcja ocr jest engine-zależna: nie wymuszamy pól typu "stage"
+    ocr = entry["entry_json"].get("ocr", {})
+    assert isinstance(ocr, dict)
+
+    # (opcjonalnie) jeśli stage istnieje, to niech będzie stringiem
+    if "stage" in ocr:
+        assert isinstance(ocr["stage"], str)
+
