@@ -12,3 +12,7 @@ __pycache__/
 # OCR outputs / runtime data
 ocr_out/
 
+
+# Python
+__pycache__/
+*.pyc
