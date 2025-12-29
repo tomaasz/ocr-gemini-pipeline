@@ -5,6 +5,16 @@ Zmiany niezgodne z MANIFEST są traktowane jako błąd projektowy.
 
 ---
 
+## Czego TU NIE MA (What does NOT belong here)
+
+To repozytorium **ocr-gemini-pipeline** jest ściśle wydzielonym projektem. Nie należy tu wrzucać:
+1.  **Profilu przeglądarki (User Data Dir):** Dane sesji Gemini/Chrome są trzymane poza repozytorium (np. `~/.pw_gemini_profile`).
+2.  **Danych wejściowych/wyjściowych:** Katalogi ze skanami i wyniki OCR są zewnętrzne.
+3.  **Logiki biznesowej innej niż gen-genealogy:** To narzędzie jest generyczne dla pipeline'u OCR, specyficzne parsery metryk kościelnych itp. powinny być w osobnych warstwach lub projektach, jeśli nie dotyczą bezpośrednio ekstrakcji tekstu/danych z obrazu.
+4.  **Ad-hoc skryptów:** Wszystko co wchodzi do `src/` musi być częścią pipeline'u. Skrypty "brudnopisowe" trzymaj lokalnie.
+
+---
+
 ## Założenia ogólne
 
 - Pipeline OCR sterowany przez **Gemini Web UI (Playwright)** — nie przez API.
