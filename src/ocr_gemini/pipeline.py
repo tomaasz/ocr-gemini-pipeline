@@ -12,6 +12,8 @@ from .db import MinimalDbWriter, db_config_from_env
 from .files import DiscoveredFile, iter_files, with_sha256
 from .metrics import DocumentMetrics
 from .output import write_outputs
+from .ui.engine import OcrEngine
+from .ui.fake_engine import FakeEngine
 
 
 @dataclass
@@ -59,19 +61,20 @@ def config_from_env() -> PipelineConfig:
 
 class Pipeline:
     """
-    Stage 1.3: Orkiestracja bez UI.
-
-    Przebieg dla każdego pliku:
-      - discovery + sha256
-      - DB: upsert_document(status='processing', started_at)
-      - zapis artefaktów (txt/json/meta) do out-root (z placeholder OCR)
-      - DB: upsert_entry (potwierdzenie zapisu)
-      - DB: update document(status='done', finished_at)
+    Stage 1.3+: Orkiestracja bez prawdziwego UI (UI/Playwright później).
+    Zamiast placeholdera mamy silnik OCR (domyślnie FakeEngine).
     """
 
-    def __init__(self, cfg: PipelineConfig, *, db_writer: Optional[MinimalDbWriter] = None):
+    def __init__(
+        self,
+        cfg: PipelineConfig,
+        *,
+        db_writer: Optional[MinimalDbWriter] = None,
+        engine: Optional[OcrEngine] = None,
+    ):
         self.cfg = cfg
         self.db = db_writer or MinimalDbWriter(db_config_from_env())
+        self.engine = engine or FakeEngine()
 
     def run(self) -> int:
         items = with_sha256(
@@ -89,21 +92,11 @@ class Pipeline:
         m = DocumentMetrics(file_name=item.file_name, start_ts=time.time())
         m.attempts = 1
 
-        # Placeholder OCR result (UI integration later)
-        # W Stage 2/3 w tym miejscu pojawi się wywołanie UI / extract.
-        ocr_text = "PLACEHOLDER (Stage 1.3: no UI yet)"
-        ocr_json: Dict[str, Any] = {
-            "stage": "1.3",
-            "note": "No UI. This is a placeholder output to validate orchestration.",
-            "prompt_id": self.cfg.prompt_id,
-        }
-
         started_at = None
         finished_at = None
 
         try:
             # DB: document start
-            # started_at/finished_at zostawiamy None jeśli kolumny są strict; db_writer przyjmie None.
             doc_id = self.db.upsert_document(
                 source_path=str(item.path),
                 file_name=item.file_name,
@@ -119,8 +112,23 @@ class Pipeline:
                 processing_finished_at=finished_at,
             )
 
+            # OCR (engine; Stage 2/3: Playwright)
+            res = self.engine.ocr(item.path, self.cfg.prompt_id)
+            ocr_text = res.text
+            ocr_json: Dict[str, Any] = dict(res.data)
+
+            # Safety: block placeholder junk unless explicitly allowed
+            if (
+                os.environ.get("OCR_ALLOW_PLACEHOLDER", "0") != "1"
+                and isinstance(ocr_text, str)
+                and ocr_text.startswith("PLACEHOLDER")
+            ):
+                raise RuntimeError(
+                    "Placeholder OCR blocked. Set OCR_ALLOW_PLACEHOLDER=1 if you really want placeholder outputs."
+                )
+
             # Output meta
-            meta = {
+            meta: Dict[str, Any] = {
                 "source_path": str(item.path),
                 "rel_path": str(item.rel_path),
                 "file_name": item.file_name,
@@ -181,13 +189,10 @@ class Pipeline:
                 processing_finished_at=finished_at,
             )
 
-            # Commit once per file
             self.db.commit()
-
             print(f"OK: {item.file_name} -> doc_id={doc_id2} entry_id={entry_id} out={paths.base_dir}")
 
         except Exception as e:
-            # rollback db changes for this file
             try:
                 self.db.rollback()
             except Exception:
@@ -195,7 +200,7 @@ class Pipeline:
 
             m.finish("error", error_reason=str(e))
 
-            # try to write error meta (best-effort)
+            # best-effort error meta
             try:
                 meta_err = {
                     "source_path": str(item.path),
@@ -230,8 +235,5 @@ def run_from_env() -> int:
 
 
 if __name__ == "__main__":
-    # This module can be used for manual smoke testing:
-    #   set -a; source /etc/default/gemini-ocr; set +a
-    #   /home/tomaasz/projects/ocr-gemini/.venv/bin/python -m ocr_gemini.pipeline
     count = run_from_env()
     print(json.dumps({"processed": count}, ensure_ascii=False))
