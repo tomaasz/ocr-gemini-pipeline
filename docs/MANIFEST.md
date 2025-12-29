@@ -51,6 +51,24 @@ ocr-gemini-pipeline/
 
 ---
 
+## Standard Dokumentacji
+
+Struktura dokumentacji jest ściśle zdefiniowana i podzielona na role:
+
+| Plik/Katalog | Rola | Status |
+| :--- | :--- | :--- |
+| `README.md` | **Entry Point** | Canonical. Wysokopoziomowy wstęp i linki. |
+| `docs/run.md` | **Run Guide** | Canonical. Instrukcja uruchamiania i weryfikacji. |
+| `docs/MANIFEST.md` | **Kontrakt** | Canonical. Architektura, zasady, zakazy. |
+| `docs/TESTING.md` | **QA** | Canonical. Strategia testów. |
+| `docs/reference/` | **Context** | Reference. Opisy specyficznych środowisk (np. OVH). |
+| `docs/snapshots/` | **History** | Historical. Immutable snapshoty stanu. |
+| `legacy/` | **Legacy** | Read-only. Stary kod i stara dokumentacja. |
+
+Zmiany w strukturze wymagają aktualizacji tej tabeli.
+
+---
+
 ## Zasady pracy
 
 - Maksymalnie **1–3 pliki** na commit.
