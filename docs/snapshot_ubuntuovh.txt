@@ -1,0 +1,63 @@
+## Snapshot 2025-12-29T20:04:12+00:00
+
+### systemd unit
+# /etc/systemd/system/gemini-ocr.service
+[Unit]
+StartLimitIntervalSec=300
+StartLimitBurst=3
+Description=Gemini OCR Pipeline (system service)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+SyslogIdentifier=gemini-ocr
+Type=simple
+User=tomaasz
+Group=tomaasz
+
+WorkingDirectory=/home/tomaasz/projects/ocr-gemini
+EnvironmentFile=/etc/default/gemini-ocr
+Environment=PYTHONUNBUFFERED=1
+
+StandardOutput=append:/var/log/gemini-ocr/gemini-ocr.log
+StandardError=append:/var/log/gemini-ocr/gemini-ocr.err.log
+
+ExecStart=/usr/local/bin/gemini-ocr-run.sh
+
+Restart=on-failure
+RestartSec=30s
+TimeoutStopSec=30s
+KillSignal=SIGINT
+
+[Install]
+WantedBy=multi-user.target
+
+### env file
+# --- Python ---
+PYTHON_EXEC=/home/tomaasz/projects/ocr-gemini/.venv/bin/python
+SCRIPT_FILE=/home/tomaasz/projects/ocr-gemini/gemini_ocr.py
+
+# --- OCR ---
+OCR_ROOT="/home/tomaasz/mnt/nas_genealogy/Sources/Nurskie dokumenty/"
+OCR_OUT_ROOT=/home/tomaasz/ocr_out
+OCR_PROMPT_ID=agad_generic
+OCR_PROFILE_DIR=/home/tomaasz/.pw_gemini_profile
+OCR_RECURSIVE=1
+OCR_LIMIT=5
+
+# --- DB (Docker Postgres) ---
+PGHOST=127.0.0.1
+PGPORT=5432
+PGDATABASE=genealogy
+PGUSER=tomaasz
+
+### wrapper location
+-rwxr-xr-x 1 root root 1028 Dec 29 18:24 /usr/local/bin/gemini-ocr-run.sh
+
+### repo dirs
+total 20
+drwxrwxr-x  5 tomaasz tomaasz 4096 Dec 29 19:51 .
+drwxr-xr-x 42 tomaasz tomaasz 4096 Dec 29 20:00 ..
+drwxrwxr-x  2 tomaasz tomaasz 4096 Dec 27 13:36 _scratch_ocr_gemini
+drwxrwxr-x  9 tomaasz tomaasz 4096 Dec 29 19:46 ocr-gemini
+drwxrwxr-x  8 tomaasz tomaasz 4096 Dec 29 20:03 ocr-gemini-pipeline
