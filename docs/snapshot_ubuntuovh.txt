@@ -1,6 +1,13 @@
-## Snapshot 2025-12-29T20:04:12+00:00
+## Snapshot 2025-12-29T20:32:10+00:00
 
-### systemd unit
+Ten snapshot dokumentuje faktyczny stan środowiska produkcyjnego
+na hoście `tomaasz@ubuntuovh` po zakończeniu Stage 1.3
+(modularny pipeline bez UI, potwierdzony runem).
+
+============================================================
+
+### systemd unit (AKTYWNA PRODUKCJA)
+
 # /etc/systemd/system/gemini-ocr.service
 [Unit]
 StartLimitIntervalSec=300
@@ -15,7 +22,11 @@ Type=simple
 User=tomaasz
 Group=tomaasz
 
+# UWAGA:
+# systemd NADAL uruchamia STARE repo (ocr-gemini).
+# Nowe repo (ocr-gemini-pipeline) NIE jest jeszcze podpięte do systemd.
 WorkingDirectory=/home/tomaasz/projects/ocr-gemini
+
 EnvironmentFile=/etc/default/gemini-ocr
 Environment=PYTHONUNBUFFERED=1
 
@@ -32,7 +43,12 @@ KillSignal=SIGINT
 [Install]
 WantedBy=multi-user.target
 
-### env file
+============================================================
+
+### env file (ŹRÓDŁO PRAWDY)
+
+# /etc/default/gemini-ocr
+
 # --- Python ---
 PYTHON_EXEC=/home/tomaasz/projects/ocr-gemini/.venv/bin/python
 SCRIPT_FILE=/home/tomaasz/projects/ocr-gemini/gemini_ocr.py
@@ -51,13 +67,69 @@ PGPORT=5432
 PGDATABASE=genealogy
 PGUSER=tomaasz
 
-### wrapper location
--rwxr-xr-x 1 root root 1028 Dec 29 18:24 /usr/local/bin/gemini-ocr-run.sh
+============================================================
 
-### repo dirs
-total 20
-drwxrwxr-x  5 tomaasz tomaasz 4096 Dec 29 19:51 .
-drwxr-xr-x 42 tomaasz tomaasz 4096 Dec 29 20:00 ..
-drwxrwxr-x  2 tomaasz tomaasz 4096 Dec 27 13:36 _scratch_ocr_gemini
-drwxrwxr-x  9 tomaasz tomaasz 4096 Dec 29 19:46 ocr-gemini
-drwxrwxr-x  8 tomaasz tomaasz 4096 Dec 29 20:03 ocr-gemini-pipeline
+### Python runtime (POTWIERDZONE)
+
+Venv:
+  /home/tomaasz/projects/ocr-gemini/.venv
+
+Python:
+  Python 3.12.3
+
+Playwright:
+  import playwright -> OK
+
+============================================================
+
+### wrapper location (PRODUKCJA)
+
+-rwxr-xr-x 1 root root 1028 Dec 29 18:24
+/usr/local/bin/gemini-ocr-run.sh
+
+============================================================
+
+### repozytoria (FAKTYCZNY STAN)
+
+~/projects/
+├── ocr-gemini
+│   └── AKTYWNA PRODUKCJA (systemd)
+│
+└── ocr-gemini-pipeline
+    └── NOWE REPO MODULARNE
+        - zainstalowane w venv jako editable:
+          pip install -e .
+        - uruchamiane MANUALNIE
+        - NIE podpięte do systemd
+
+============================================================
+
+### Stage 1.3 — POTWIERDZONY RUN (NOWE REPO)
+
+Komenda:
+  set -a; source /etc/default/gemini-ocr; set +a
+  OCR_LIMIT=1 \
+  /home/tomaasz/projects/ocr-gemini/.venv/bin/python \
+    -m ocr_gemini.pipeline
+
+Wynik:
+  OK: <plik> -> doc_id=1 entry_id=1 out=<OCR_OUT_ROOT>/...
+  {"processed": 1}
+
+Efekty:
+- zapis katalogu wynikowego w OCR_OUT_ROOT
+- wpis w genealogy.ocr_document
+- wpis w genealogy.ocr_entry
+- placeholder OCR (Stage 1.3: no UI)
+
+============================================================
+
+### Status końcowy snapshotu
+
+- Produkcja: STARE repo (ocr-gemini) — działa
+- Nowe repo: ocr-gemini-pipeline
+  - Stage 1–1.3 DONE
+  - gotowe do integracji UI (Stage 2)
+  - NIE podpięte do systemd (świadoma decyzja)
+
+============================================================
