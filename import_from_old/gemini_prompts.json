@@ -1,0 +1,122 @@
+{
+  "version": "1.0",
+  "default_prompt_id": "agad_generic",
+  "prompts": [
+    {
+      "id": "agad_generic",
+      "title": "AGAD — ogólny (auto-detekcja typu)",
+      "template": [
+        "Wydobądź dane WYŁĄCZNIE z załączonego obrazu.",
+        "",
+        "Na jednej stronie może być: brak wpisów / jeden wpis / wiele wpisów (entries).",
+        "Wpis może być kontynuacją z poprzedniej strony lub kończyć się na następnej.",
+        "",
+        "Zwróć WYŁĄCZNIE poprawny JSON (bez markdown, bez komentarzy, bez tekstu poza JSON).",
+        "",
+        "ZASADY:",
+        "- Nie tłumacz, nie parafrazuj, nie dopowiadaj, nie zgaduj.",
+        "- Jeśli czegoś nie widać / nie jesteś pewny → null + niska confidence.",
+        "",
+        "TEKST:",
+        "- card.raw_text: pełny, wierny tekst całej strony.",
+        "- entry.extracted_text: tylko tekst danego wpisu.",
+        "",
+        "KONTYNUACJE:",
+        "- jeśli wpis jest kontynuacją z poprzedniej: continued_from_previous=true, nie zgaduj początku",
+        "- jeśli urywa się na tej stronie: continued_on_next_page=true",
+        "",
+        "entry_id deterministycznie: e1, e2, e3... w kolejności na stronie.",
+        "",
+        "DANE KONTEKSTOWE:",
+        "- file_name: \"__FILE_NAME__\"",
+        "- source_path: \"__SOURCE_PATH__\"",
+        "",
+        "Jeśli strona nie zawiera wpisów → \"entries\": []",
+        "",
+        "SCHEMAT JSON:",
+        "{",
+        "  \"card\": {",
+        "    \"file_name\": \"__FILE_NAME__\",",
+        "    \"source_path\": \"__SOURCE_PATH__\",",
+        "    \"page_no\": null,",
+        "    \"document_type_guess\": null,",
+        "    \"raw_text\": null,",
+        "    \"issues\": [],",
+        "    \"confidence\": 0.0",
+        "  },",
+        "  \"entries\": [",
+        "    {",
+        "      \"entry_id\": \"e1\",",
+        "      \"entry_type_guess\": null,",
+        "      \"date\": null,",
+        "      \"people\": [{\"name\": null, \"role\": null}],",
+        "      \"places\": [null],",
+        "      \"continued_from_previous\": false,",
+        "      \"continued_on_next_page\": false,",
+        "      \"issues\": [],",
+        "      \"extracted_text\": null,",
+        "      \"confidence\": 0.0",
+        "    }",
+        "  ]",
+        "}"
+      ]
+    },
+    {
+      "id": "agad_metryczka_techniczna",
+      "title": "Metryczka techniczna skanu",
+      "template": [
+        "To jest metryczka techniczna (opis archiwalny / dane skanu), nie akt.",
+        "Wydobądź dane WYŁĄCZNIE z obrazu. Nie zgaduj.",
+        "Nie tłumacz. Zwróć WYŁĄCZNIE JSON.",
+        "",
+        "Jeśli to tylko metryczka bez wpisów metrykalnych → entries: [].",
+        "",
+        "DANE: file_name=\"__FILE_NAME__\", source_path=\"__SOURCE_PATH__\"",
+        "",
+        "Zwróć JSON wg schematu z promptu ogólnego (card + entries)."
+      ]
+    },
+    {
+      "id": "agad_akt_urodzenia",
+      "title": "Akt urodzenia",
+      "template": [
+        "To jest akt urodzenia. NIE tłumacz. NIE zgaduj.",
+        "Zwróć WYŁĄCZNIE JSON (bez markdown).",
+        "Role w people: dziecko, ojciec, matka, świadek, chrzestny, chrzestna, zgłaszający.",
+        "Jeśli niepewne → null + issues + niska confidence.",
+        "",
+        "DANE: file_name=\"__FILE_NAME__\", source_path=\"__SOURCE_PATH__\"",
+        "",
+        "Zwróć JSON wg schematu z promptu ogólnego (card + entries)."
+      ]
+    },
+    {
+      "id": "agad_akt_slubu",
+      "title": "Akt małżeństwa",
+      "template": [
+        "To jest akt małżeństwa. NIE tłumacz. NIE zgaduj.",
+        "Zwróć WYŁĄCZNIE JSON (bez markdown).",
+        "Role w people: pan młody, panna młoda, świadek, rodzic, ksiądz/urzędnik.",
+        "Jeśli niepewne → null + issues + niska confidence.",
+        "",
+        "DANE: file_name=\"__FILE_NAME__\", source_path=\"__SOURCE_PATH__\"",
+        "",
+        "Zwróć JSON wg schematu z promptu ogólnego (card + entries)."
+      ]
+    },
+    {
+      "id": "agad_akt_zgonu",
+      "title": "Akt zgonu",
+      "template": [
+        "To jest akt zgonu. NIE tłumacz. NIE zgaduj.",
+        "Zwróć WYŁĄCZNIE JSON (bez markdown).",
+        "Role w people: zmarły, zgłaszający, świadek, małżonek/rodzic (jeśli występuje).",
+        "Jeśli niepewne → null + issues + niska confidence.",
+        "",
+        "DANE: file_name=\"__FILE_NAME__\", source_path=\"__SOURCE_PATH__\"",
+        "",
+        "Zwróć JSON wg schematu z promptu ogólnego (card + entries)."
+      ]
+    }
+  ]
+}

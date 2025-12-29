@@ -1,0 +1,39 @@
+[Unit]
+Description=Gemini OCR Worker
+After=network.target
+
+[Service]
+Type=simple
+
+# --- User/Group Configuration ---
+# IMPORTANT: Change these to the user/group that owns the project files and OCR input/output directories.
+# Example: User=tomaasz
+User=ubuntu
+Group=ubuntu
+
+# --- Working Directory ---
+# Path to the repository root where gemini_ocr.py resides.
+# Example: /home/tomaasz/projects/ocr-gemini
+WorkingDirectory=/opt/gemini-ocr
+
+# --- Environment ---
+EnvironmentFile=/etc/default/gemini-ocr
+# Ensure strict python output buffering (log immediately)
+Environment=PYTHONUNBUFFERED=1
+
+# --- Execution ---
+# Wrapper script that builds CLI arguments from environment variables
+# Ensure /usr/local/bin/gemini-ocr-run.sh exists and is executable
+ExecStart=/usr/local/bin/gemini-ocr-run.sh
+
+# --- Restart Policy ---
+Restart=on-failure
+RestartSec=30s
+
+# --- Logging ---
+# Standard output is captured by systemd/journald.
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

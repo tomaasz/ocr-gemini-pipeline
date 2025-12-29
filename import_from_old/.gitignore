@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+# Playwright profile (nie wrzucamy do repo)
+.pw_gemini_profile/
+pw_profile/
+chrome_profile/
+**/Default/
+**/Profile*/
+
+# Output i debug
+ocr_out/
+ocr_debug/
+*.log
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+gemini_ocr.env
