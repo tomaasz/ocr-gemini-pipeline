@@ -36,16 +36,14 @@ def test_retry_call_wrong_exception():
 
 def test_wait_for_generation_complete_success():
     """Test that it returns when completed."""
-    is_gen = Mock(return_value=True)
     has_comp = Mock(side_effect=[False, False, True])
 
-    wait_for_generation_complete(is_gen, has_comp, timeout_ms=1000, poll_interval_ms=10)
+    wait_for_generation_complete(has_comp, timeout_ms=1000, poll_interval_ms=10)
     assert has_comp.call_count == 3
 
 def test_wait_for_generation_complete_timeout():
     """Test that it raises TimeoutError."""
-    is_gen = Mock(return_value=True)
     has_comp = Mock(return_value=False)
 
     with pytest.raises(TimeoutError):
-        wait_for_generation_complete(is_gen, has_comp, timeout_ms=50, poll_interval_ms=10)
+        wait_for_generation_complete(has_comp, timeout_ms=50, poll_interval_ms=10)

@@ -1,5 +1,5 @@
 import time
-from typing import Callable, Tuple, Type, TypeVar, Optional
+from typing import Callable, Tuple, Type, TypeVar
 
 T = TypeVar("T")
 
@@ -36,7 +36,6 @@ def retry_call(
 
 
 def wait_for_generation_complete(
-    is_generating: Callable[[], bool],
     has_completed: Callable[[], bool],
     timeout_ms: int,
     poll_interval_ms: int
@@ -45,7 +44,6 @@ def wait_for_generation_complete(
     Waits for a generation process to complete.
 
     Args:
-        is_generating: Function returning True if generation is in progress.
         has_completed: Function returning True if generation has completed successfully.
         timeout_ms: Maximum time to wait in milliseconds.
         poll_interval_ms: Interval between checks in milliseconds.
@@ -58,12 +56,6 @@ def wait_for_generation_complete(
     while (time.time() - start_time) * 1000 < timeout_ms:
         if has_completed():
             return
-
-        # We can also check if it is still generating to potentially handle
-        # cases where it stops generating but hasn't completed (error state?),
-        # but the prompt specifically asked for poll until completed or timeout.
-        # However, checking is_generating() can be useful if the caller provides logic there.
-        # But based on the prompt "poll until completed or timeout", strict adherence:
 
         time.sleep(poll_interval_ms / 1000.0)
 
