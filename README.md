@@ -54,3 +54,12 @@ Configuration options for debugging failures:
 
 *   Legacy `gemini_ocr.py` used `--debug-dir` to dump screenshots on `cleanup_failed`, `extract_response_failed`, etc.
 *   Legacy timeouts were hardcoded or passed via CLI args (e.g. `--timeout-ms`).
+
+## Reliability Helpers
+
+Reusable, pure-logic helpers are available in `src/ocr_gemini/utils.py` to improve stability without coupling to Playwright:
+
+*   **`retry_call`**: Retries a function with backoff on specific exceptions.
+*   **`wait_for_generation_complete`**: Generic polling for process completion (e.g. generation).
+
+These helpers abstract the retry/wait logic found in the legacy codebase (e.g., `send_message_with_retry`, `wait_generation_cycle`).
