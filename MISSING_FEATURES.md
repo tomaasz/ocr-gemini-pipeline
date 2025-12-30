@@ -35,7 +35,15 @@
     - Resume: Processes only failed/missing files.
     - Run History: Tracks status, timestamps, and error details per run.
 
-## Remaining for Stage 2
-- Retry/Backoff Logic (auto-recovery from transient failures).
+### Retry & Recovery (Stage 2.0)
+- **Added**: `sql/002_add_retry_fields.sql` schema migration.
+- **Added**: `--retry-failed`, `--max-attempts`, `--retry-backoff-seconds` CLI flags.
+- **Features**:
+    - **Attempt Tracking**: Stores `attempt_no`, `parent_run_id`, and `error_kind` in DB.
+    - **Error Classification**: Distinguishes `transient` vs `permanent` errors.
+    - **Safe Retries**: Only retries transient/unknown errors; respects max attempts cap.
+    - **In-Attempt Recovery**: Automatically refreshes page on transient UI errors during execution.
+
+## Remaining
 - Headless Cron Mode (fully automated execution).
 - Worker Pool integration (if needed for parallelism).
