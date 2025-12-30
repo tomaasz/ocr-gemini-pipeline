@@ -131,42 +131,72 @@ def _find_send_button(page: Page) -> Optional[Locator]:
 
 
 def wait_for_generation_complete(
-    page: Page, timeout_ms: int, debug_dir: Optional[Path] = None
+    page: Page,
+    timeout_ms: int,
+    stability_ms: int = 500,
+    debug_dir: Optional[Path] = None,
 ) -> None:
     """
-    Waits for the generation to complete by observing the Stop button.
+    Waits for the generation to complete by observing the Stop button or response.
 
     Logic:
-    1. Wait for "Stop" button to appear (generation started).
-       - Uses a short timeout (5000ms).
-       - If it doesn't appear, we assume generation finished very quickly or never
-         showed the button (per user req: "Stop never appeared -> treat as already finished").
-    2. Wait for "Stop" button to disappear (generation finished).
+    1. Wait for "Stop" button to appear (generation started) with short timeout (5s).
+    2. If Stop appeared:
+       - Wait for "Stop" to disappear (generation finished).
+       - Perform stability check (ensure it stays hidden).
+    3. If Stop NEVER appeared:
+       - Check if Response container is visible.
+       - If yes: assume fast generation -> Success.
+       - If no: Failure (neither Stop nor Response found).
 
     Args:
         page: Playwright Page object.
         timeout_ms: Max time to wait for completion.
+        stability_ms: Time to wait after Stop disappears to ensure no flicker.
         debug_dir: Directory to save debug artifacts on failure.
     """
     stop_like = page.locator("text=/Stop|Zatrzymaj|Anuluj|Cancel|Stop generating/i")
+    answer_area = page.locator(
+        "[data-test-id*='response' i], [data-testid*='response' i], .response-container, .markdown, message-content"
+    )
 
-    # 1. Wait for Start (Stop button visible)
+    stop_appeared = False
     try:
-        # We use a short timeout because send_message likely already confirmed start.
-        # But if we are called late, it might already be gone.
+        # 1. Wait for Start (Stop button visible)
         stop_like.first.wait_for(state="visible", timeout=5000)
+        stop_appeared = True
     except Exception:
-        # "Stop never appeared -> treat as already finished"
-        # We log nothing or maybe debug log if we had a logger.
-        pass
+        stop_appeared = False
 
-    # 2. Wait for Finish (Stop button hidden)
-    try:
-        stop_like.first.wait_for(state="hidden", timeout=timeout_ms)
-    except Exception:
-        save_debug_artifacts(page, debug_dir, "wait_gen_complete_timeout")
+    if stop_appeared:
+        # 2. Wait for Finish (Stop button hidden)
+        try:
+            stop_like.first.wait_for(state="hidden", timeout=timeout_ms)
+
+            # Stability check
+            if stability_ms > 0:
+                page.wait_for_timeout(stability_ms)
+                if stop_like.first.is_visible():
+                    # Stop button flickered back! Wait again.
+                    stop_like.first.wait_for(state="hidden", timeout=timeout_ms)
+
+        except Exception:
+            save_debug_artifacts(page, debug_dir, "wait_gen_stuck_visible")
+            raise UIActionTimeoutError(
+                f"Generation stuck: Stop button still visible after {timeout_ms}ms"
+            )
+    else:
+        # 3. Stop never appeared - check for fast generation
+        try:
+            if answer_area.count() > 0 and answer_area.first.is_visible():
+                return  # Success: Fast generation
+        except Exception:
+            pass
+
+        # Failure: No signal found
+        save_debug_artifacts(page, debug_dir, "wait_gen_no_signal")
         raise UIActionTimeoutError(
-            f"Generation did not complete (Stop button still visible) within {timeout_ms}ms"
+            "Generation verification failed: Stop button never appeared and no response container found."
         )
 
 
@@ -252,7 +282,9 @@ def send_message(
 
         if confirmed:
             # 4) Wait for generation complete
-            wait_for_generation_complete(page, generation_timeout_ms, debug_dir)
+            wait_for_generation_complete(
+                page, generation_timeout_ms, debug_dir=debug_dir
+            )
             return
 
         # If we are here, confirmation timed out for this attempt.
