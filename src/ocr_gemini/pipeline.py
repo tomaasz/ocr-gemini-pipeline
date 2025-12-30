@@ -16,25 +16,7 @@ from .output import write_outputs
 from .engine.core import OcrEngine
 
 from .ui.fake_engine import FakeEngine
-
-
-@dataclass
-class PipelineConfig:
-    """
-    Konfiguracja pipeline'u (bez UI).
-    Źródło prawdy: env z /etc/default/gemini-ocr
-    """
-
-    ocr_root: Path
-    out_root: Path
-    prompt_id: str
-    recursive: bool = False
-    limit: int = 0
-    run_tag: Optional[str] = None
-    pipeline_name: str = "stage1-no-ui"
-    processing_by: str = "ocr-gemini-pipeline"
-    debug_dir: Optional[Path] = None
-    ui_timeout_ms: int = 180_000
+from .config import PipelineConfig
 
 
 def config_from_env() -> PipelineConfig:

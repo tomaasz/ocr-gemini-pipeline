@@ -16,12 +16,14 @@ class DbConfig:
     user: str
     password: Optional[str] = None
     schema: str = "genealogy"
+    dsn: Optional[str] = None
 
 
 def db_config_from_env() -> DbConfig:
     """
     Reads DB config from environment variables.
     Matches production env file: /etc/default/gemini-ocr (PGHOST/PGPORT/PGDATABASE/PGUSER).
+    Also supports OCR_DB_DSN.
     """
     return DbConfig(
         host=os.environ.get("PGHOST", "127.0.0.1"),
@@ -30,6 +32,7 @@ def db_config_from_env() -> DbConfig:
         user=os.environ.get("PGUSER", "tomaasz"),
         password=os.environ.get("PGPASSWORD") or None,
         schema=os.environ.get("PGSCHEMA", "genealogy"),
+        dsn=os.environ.get("OCR_DB_DSN"),
     )
 
 
@@ -47,13 +50,17 @@ class MinimalDbWriter:
     def connect(self) -> None:
         if self.conn and self.conn.closed == 0:
             return
-        self.conn = psycopg2.connect(
-            host=self.cfg.host,
-            port=self.cfg.port,
-            dbname=self.cfg.dbname,
-            user=self.cfg.user,
-            password=self.cfg.password,
-        )
+
+        if self.cfg.dsn:
+            self.conn = psycopg2.connect(self.cfg.dsn)
+        else:
+            self.conn = psycopg2.connect(
+                host=self.cfg.host,
+                port=self.cfg.port,
+                dbname=self.cfg.dbname,
+                user=self.cfg.user,
+                password=self.cfg.password,
+            )
         self.conn.autocommit = False
 
     def close(self) -> None:

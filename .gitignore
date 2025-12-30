@@ -5,14 +5,11 @@ __pycache__/
 
 # Editable installs
 *.egg-info/
+build/
+dist/
 
 # Virtualenv
 .venv/
 
 # OCR outputs / runtime data
 ocr_out/
-
-
-# Python
-__pycache__/
-*.pyc
