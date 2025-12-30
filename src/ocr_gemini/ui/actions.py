@@ -294,3 +294,85 @@ def send_message(
     # If all retries failed
     save_debug_artifacts(page, debug_dir, "send_failed_final")
     raise UIActionTimeoutError("Failed to send message (no confirmation detected).")
+
+
+def upload_image(
+    page: Page,
+    image_path: Path,
+    timeout_ms: int = 10000,
+    debug_dir: Optional[Path] = None,
+) -> None:
+    """
+    Uploads an image to the chat interface.
+
+    Strategy:
+    1. Find file input element and set files.
+    2. Wait for thumbnail/attachment indicator to appear.
+       Contract: UI signal (thumbnail visible) determines upload success.
+
+    Args:
+        page: Playwright Page object.
+        image_path: Path to the image file.
+        timeout_ms: Max time for upload process.
+        debug_dir: Debug directory.
+    """
+    try:
+        # Heuristic: Find hidden file input.
+        # Use first file input found (usually correct for single chat interface).
+        file_input = page.locator('input[type="file"]').first
+
+        # Ensure image path is absolute/resolved
+        resolved_path = image_path.resolve()
+
+        # Set files
+        file_input.set_input_files(str(resolved_path), timeout=timeout_ms // 2)
+
+        # Wait for confirmation (thumbnail)
+        # Search for an image preview inside the composer area or broadly.
+        # Often previews have blob: src or are inside a specific container.
+        # We'll search for an 'img' that is NOT a button icon/avatar.
+        # Using a broad check for now: img[src^='blob:'], or specific classes if known.
+        # Fallback: just wait a moment if no specific selector is reliable without inspection.
+        # However, to meet the requirement "Wait for deterministic UI signal", we try to find a blob image.
+
+        # Try to find the preview.
+        # This selector targets images with blob sources (common for previews)
+        # or images inside known preview containers.
+        preview = page.locator(
+            "img[src^='blob:'], .file-preview img, [data-testid='attachment-thumbnail']"
+        ).first
+
+        preview.wait_for(state="visible", timeout=timeout_ms // 2)
+
+    except Exception as e:
+        save_debug_artifacts(page, debug_dir, "upload_failed")
+        raise UIActionError(f"Failed to upload image {image_path.name}: {e}")
+
+
+def get_last_response(page: Page) -> str:
+    """
+    Extracts text from the last response container.
+
+    Warning: This relies on DOM order (taking the last container).
+    It assumes the last response container corresponds to the last sent message.
+
+    Args:
+        page: Playwright Page object.
+
+    Returns:
+        Extracted text or empty string if no response found.
+    """
+    answer_area = page.locator(
+        "[data-test-id*='response' i], [data-testid*='response' i], .response-container, .markdown, message-content"
+    )
+
+    try:
+        count = answer_area.count()
+        if count == 0:
+            return ""
+
+        # Get the last element
+        last_response = answer_area.nth(count - 1)
+        return last_response.inner_text()
+    except Exception:
+        return ""
