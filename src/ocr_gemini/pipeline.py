@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .db import MinimalDbWriter, db_config_from_env
+from .debug import save_debug_artifacts
 from .files import DiscoveredFile, iter_files, with_sha256
 from .metrics import DocumentMetrics
 from .output import write_outputs
@@ -31,6 +32,8 @@ class PipelineConfig:
     run_tag: Optional[str] = None
     pipeline_name: str = "stage1-no-ui"
     processing_by: str = "ocr-gemini-pipeline"
+    debug_dir: Optional[Path] = None
+    ui_timeout_ms: int = 180_000
 
 
 def config_from_env() -> PipelineConfig:
@@ -44,6 +47,12 @@ def config_from_env() -> PipelineConfig:
     limit = int(os.environ.get("OCR_LIMIT", "0") or "0")
     run_tag = os.environ.get("OCR_RUN_TAG") or None
 
+    debug_dir_str = os.environ.get("OCR_DEBUG_DIR")
+    debug_dir = Path(debug_dir_str) if debug_dir_str else None
+
+    # Plumbing for future UI integration
+    ui_timeout_ms = int(os.environ.get("OCR_UI_TIMEOUT_MS", "180000"))
+
     host = socket.gethostname()
     processing_by = f"{os.environ.get('USER','user')}@{host}"
 
@@ -56,6 +65,8 @@ def config_from_env() -> PipelineConfig:
         run_tag=run_tag,
         pipeline_name=os.environ.get("OCR_PIPELINE", "stage1-no-ui"),
         processing_by=processing_by,
+        debug_dir=debug_dir,
+        ui_timeout_ms=ui_timeout_ms,
     )
 
 
@@ -199,6 +210,11 @@ class Pipeline:
                 pass
 
             m.finish("error", error_reason=str(e))
+
+            # Save debug artifacts if possible (helper handles page=None/debug_dir=None safely)
+            # Access page via getattr to avoid hard dependency on engine implementation
+            page = getattr(self.engine, "page", None)
+            save_debug_artifacts(page, self.cfg.debug_dir, f"error_{item.file_name}")
 
             # best-effort error meta
             try:

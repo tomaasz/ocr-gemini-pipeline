@@ -39,3 +39,18 @@ See [**Run & Verification Guide**](docs/run.md) for full instructions.
 
     python -m ocr_gemini.pipeline
     ```
+
+## Debugging
+
+Configuration options for debugging failures:
+
+*   **`OCR_DEBUG_DIR`**: Path to directory where debug artifacts (screenshots, HTML, metadata) will be saved upon failure.
+    *   If unset, no debug artifacts are saved.
+    *   Example: `export OCR_DEBUG_DIR="./debug_artifacts"`
+*   **`OCR_UI_TIMEOUT_MS`**: Global timeout for UI operations (default: 180,000 ms).
+    *   *Note: Currently plumbing only. Will be wired to Playwright engine in future stages.*
+
+### Legacy Evidence (Reference)
+
+*   Legacy `gemini_ocr.py` used `--debug-dir` to dump screenshots on `cleanup_failed`, `extract_response_failed`, etc.
+*   Legacy timeouts were hardcoded or passed via CLI args (e.g. `--timeout-ms`).
