@@ -325,8 +325,6 @@ def _try_filechooser_upload(page: Page, file_path: str, trigger_budget_ms: int) 
                 # Short timeout to detect if it's NOT a direct file chooser.
                 # This constant is a probe timeout, not a hard limit for the user.
                 with page.expect_file_chooser(timeout=MENU_DETECTION_TIMEOUT_MS) as fc_info:
-                # Short timeout to detect if it's NOT a direct file chooser
-                with page.expect_file_chooser(timeout=2000) as fc_info:
                     el.click(timeout=1000)
 
                 chooser = fc_info.value
