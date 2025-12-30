@@ -98,7 +98,7 @@ def _find_send_button(page: Page) -> Optional[Locator]:
     # 1. ARIA labels (fastest)
     candidates = root.locator("button[aria-label], [role='button'][aria-label]")
     try:
-        n = min(candidates.count(), 160)
+        n = min(candidates.count(), 200)
         for i in range(n):
             el = candidates.nth(i)
             if not el.is_visible():
@@ -112,7 +112,7 @@ def _find_send_button(page: Page) -> Optional[Locator]:
     # 2. Tooltips (slower, requires hover)
     candidates2 = root.locator("button, [role='button']")
     try:
-        n2 = min(candidates2.count(), 220)
+        n2 = min(candidates2.count(), 260)
         for i in range(n2):
             el = candidates2.nth(i)
             if not el.is_visible():
@@ -138,22 +138,6 @@ def wait_for_generation_complete(
 ) -> None:
     """
     Waits for the generation to complete by observing the Stop button or response.
-
-    Logic:
-    1. Wait for "Stop" button to appear (generation started) with short timeout (5s).
-    2. If Stop appeared:
-       - Wait for "Stop" to disappear (generation finished).
-       - Perform stability check (ensure it stays hidden).
-    3. If Stop NEVER appeared:
-       - Check if Response container is visible.
-       - If yes: assume fast generation -> Success.
-       - If no: Failure (neither Stop nor Response found).
-
-    Args:
-        page: Playwright Page object.
-        timeout_ms: Max time to wait for completion.
-        stability_ms: Time to wait after Stop disappears to ensure no flicker.
-        debug_dir: Directory to save debug artifacts on failure.
     """
     stop_like = page.locator("text=/Stop|Zatrzymaj|Anuluj|Cancel|Stop generating/i")
     answer_area = page.locator(
@@ -162,22 +146,18 @@ def wait_for_generation_complete(
 
     stop_appeared = False
     try:
-        # 1. Wait for Start (Stop button visible)
         stop_like.first.wait_for(state="visible", timeout=5000)
         stop_appeared = True
     except Exception:
         stop_appeared = False
 
     if stop_appeared:
-        # 2. Wait for Finish (Stop button hidden)
         try:
             stop_like.first.wait_for(state="hidden", timeout=timeout_ms)
 
-            # Stability check
             if stability_ms > 0:
                 page.wait_for_timeout(stability_ms)
                 if stop_like.first.is_visible():
-                    # Stop button flickered back! Wait again.
                     stop_like.first.wait_for(state="hidden", timeout=timeout_ms)
 
         except Exception:
@@ -186,14 +166,12 @@ def wait_for_generation_complete(
                 f"Generation stuck: Stop button still visible after {timeout_ms}ms"
             )
     else:
-        # 3. Stop never appeared - check for fast generation
         try:
             if answer_area.count() > 0 and answer_area.first.is_visible():
-                return  # Success: Fast generation
+                return
         except Exception:
             pass
 
-        # Failure: No signal found
         save_debug_artifacts(page, debug_dir, "wait_gen_no_signal")
         raise UIActionTimeoutError(
             "Generation verification failed: Stop button never appeared and no response container found."
@@ -209,24 +187,6 @@ def send_message(
 ) -> None:
     """
     Resiliently sends the message in the composer.
-
-    Ported from legacy/gemini_ocr.py lines 584-644 (send_message_with_retry).
-
-    Strategy:
-    1. Try clicking the "Send" button (if found).
-    2. Fallback: Focus composer and press Enter.
-    3. Confirm generation started (Stop button or response container).
-    4. Wait for generation to complete (Stop button disappears).
-
-    Args:
-        page: Playwright Page object.
-        send_timeout_ms: Max time to attempt triggering the send action.
-        confirm_timeout_ms: Max time to wait for confirmation (generation start).
-        generation_timeout_ms: Max time to wait for generation to complete.
-        debug_dir: Directory to save debug artifacts on failure.
-
-    Raises:
-        UIActionTimeoutError: If sending fails or confirmation is not received.
     """
     stop_like = page.locator("text=/Stop|Zatrzymaj|Anuluj|Cancel|Stop generating/i")
     answer_area = page.locator(
@@ -234,7 +194,6 @@ def send_message(
     )
 
     max_retries = 3
-    # Distribute send_timeout_ms across retries roughly
     per_try_timeout = max(1000, send_timeout_ms // max_retries)
 
     for attempt in range(1, max_retries + 1):
@@ -247,7 +206,6 @@ def send_message(
                 btn.click(force=True, timeout=per_try_timeout)
                 sent = True
         except Exception:
-            # save debug but don't fail yet, try fallback
             save_debug_artifacts(page, debug_dir, f"send_click_failed_{attempt}")
 
         # 2) Fallback: Enter in composer
@@ -281,19 +239,83 @@ def send_message(
             page.wait_for_timeout(200)
 
         if confirmed:
-            # 4) Wait for generation complete
             wait_for_generation_complete(
                 page, generation_timeout_ms, debug_dir=debug_dir
             )
             return
 
-        # If we are here, confirmation timed out for this attempt.
         save_debug_artifacts(page, debug_dir, f"send_no_confirmation_{attempt}")
-        page.wait_for_timeout(500)  # Wait a bit before retry
+        page.wait_for_timeout(500)
 
-    # If all retries failed
     save_debug_artifacts(page, debug_dir, "send_failed_final")
     raise UIActionTimeoutError("Failed to send message (no confirmation detected).")
+
+
+def _assert_on_gemini_chat(page: Page) -> None:
+    """
+    Gemini potrafi przekierować na:
+    - myactivity.google.com (ustawienia aktywności / zgody)
+    - accounts.google.com (logowanie)
+    - ogólne consent / interstitiale
+
+    W takich stanach upload i tak nie ma sensu.
+    """
+    url = (page.url or "").lower()
+    if "myactivity.google.com" in url or "accounts.google.com" in url:
+        raise UIActionError(
+            f"Nie jesteś na ekranie czatu Gemini (URL={page.url}). "
+            "To wygląda na przekierowanie do aktywności / logowania. "
+            "Otwórz Gemini w profilu Playwright i dokończ logowanie/zgody, potem uruchom skrypt ponownie."
+        )
+
+
+def _try_filechooser_upload(page: Page, file_path: str, trigger_budget_ms: int) -> bool:
+    """
+    Próbujemy znaleźć przycisk/ikonę, która otwiera FileChooser.
+    Zamiast kilku sztywnych selectorów – robimy skan po button / role=button
+    i szukamy po aria-label/title/tekście.
+    """
+    rx = re.compile(
+        r"(upload|attach|add|file|image|photo|picture|"
+        r"prześlij|przeslij|załącz|zalacz|dodaj|plik|obraz|zdj[eę]cie|grafika)",
+        re.I,
+    )
+
+    root = _composer_root(page)
+
+    candidates = root.locator("button, [role='button']")
+    n = min(candidates.count(), 320)
+
+    for i in range(n):
+        el = candidates.nth(i)
+        try:
+            if not el.is_visible():
+                continue
+
+            aria = (el.get_attribute("aria-label") or "").strip()
+            title = (el.get_attribute("title") or "").strip()
+            txt = ""
+            try:
+                txt = (el.inner_text() or "").strip()
+            except Exception:
+                txt = ""
+
+            blob = " ".join([aria, title, txt]).strip()
+            if not blob or not rx.search(blob):
+                # czasem label jest na child (svg/span) – próbujemy jeszcze has_text
+                pass
+
+            # jeśli coś pasuje, próbujemy FileChooser
+            if rx.search(blob):
+                with page.expect_file_chooser(timeout=trigger_budget_ms) as fc_info:
+                    el.click()
+                chooser = fc_info.value
+                chooser.set_files(file_path)
+                return True
+        except Exception:
+            continue
+
+    return False
 
 
 def upload_image(
@@ -305,62 +327,79 @@ def upload_image(
     """
     Uploads an image to the chat interface.
 
-    Strategy:
-    1. Find file input element and set files.
-    2. Wait for thumbnail/attachment indicator to appear.
-       Contract: UI signal (thumbnail visible) determines upload success.
-
-    Args:
-        page: Playwright Page object.
-        image_path: Path to the image file.
-        timeout_ms: Max time for upload process.
-        debug_dir: Debug directory.
+    Robust strategy:
+    0) Upewnij się, że jesteśmy na Gemini chat (nie myactivity/accounts).
+    1) Prefer FileChooser (klik w ikonę/przycisk, expect_file_chooser, set_files).
+    2) Fallback: input[type=file] (page + frames), set_input_files.
+    3) Wait for deterministic UI signal (preview/attachment appears).
     """
+    resolved_path = image_path.expanduser().resolve()
+    file_path = str(resolved_path)
+
+    trigger_budget = max(4000, timeout_ms // 2)
+    preview_budget = max(4000, timeout_ms - trigger_budget)
+
+    preview_selector = (
+        "img[src^='blob:'], "
+        "[data-testid*='attachment' i], "
+        "[data-test-id*='attachment' i], "
+        ".file-preview img"
+    )
+
+    def _wait_for_preview(deadline_ms: int) -> None:
+        t0 = time.time()
+        last_err = None
+        while (time.time() - t0) * 1000 < deadline_ms:
+            try:
+                loc = page.locator(preview_selector).first
+                if loc.count() > 0 and loc.is_visible():
+                    return
+            except Exception as e:
+                last_err = e
+            page.wait_for_timeout(200)
+        raise UIActionTimeoutError(f"Upload preview not detected. last_err={last_err!r}")
+
     try:
-        # Heuristic: Find hidden file input.
-        # Use first file input found (usually correct for single chat interface).
-        file_input = page.locator('input[type="file"]').first
+        _assert_on_gemini_chat(page)
 
-        # Ensure image path is absolute/resolved
-        resolved_path = image_path.resolve()
+        # 1) FileChooser approach
+        if _try_filechooser_upload(page, file_path, trigger_budget):
+            _wait_for_preview(preview_budget)
+            return
 
-        # Set files
-        file_input.set_input_files(str(resolved_path), timeout=timeout_ms // 2)
+        # 2) Fallback: input[type=file] in main page
+        try:
+            inp = page.locator('input[type="file"]').first
+            inp.wait_for(state="attached", timeout=trigger_budget)
+            inp.set_input_files(file_path, timeout=trigger_budget)
+            _wait_for_preview(preview_budget)
+            return
+        except Exception:
+            pass
 
-        # Wait for confirmation (thumbnail)
-        # Search for an image preview inside the composer area or broadly.
-        # Often previews have blob: src or are inside a specific container.
-        # We'll search for an 'img' that is NOT a button icon/avatar.
-        # Using a broad check for now: img[src^='blob:'], or specific classes if known.
-        # Fallback: just wait a moment if no specific selector is reliable without inspection.
-        # However, to meet the requirement "Wait for deterministic UI signal", we try to find a blob image.
+        # 3) Fallback: frames
+        for fr in page.frames:
+            try:
+                inp = fr.locator('input[type="file"]').first
+                inp.wait_for(state="attached", timeout=3000)
+                inp.set_input_files(file_path, timeout=trigger_budget)
+                _wait_for_preview(preview_budget)
+                return
+            except Exception:
+                continue
 
-        # Try to find the preview.
-        # This selector targets images with blob sources (common for previews)
-        # or images inside known preview containers.
-        preview = page.locator(
-            "img[src^='blob:'], .file-preview img, [data-testid='attachment-thumbnail']"
-        ).first
-
-        preview.wait_for(state="visible", timeout=timeout_ms // 2)
+        raise UIActionTimeoutError(
+            "Nie udało się znaleźć ani FileChooser (przycisku upload), ani input[type=file]."
+        )
 
     except Exception as e:
         save_debug_artifacts(page, debug_dir, "upload_failed")
-        raise UIActionError(f"Failed to upload image {image_path.name}: {e}")
+        raise UIActionError(f"Failed to upload image {image_path.name}: {e}") from e
 
 
 def get_last_response(page: Page) -> str:
     """
     Extracts text from the last response container.
-
-    Warning: This relies on DOM order (taking the last container).
-    It assumes the last response container corresponds to the last sent message.
-
-    Args:
-        page: Playwright Page object.
-
-    Returns:
-        Extracted text or empty string if no response found.
     """
     answer_area = page.locator(
         "[data-test-id*='response' i], [data-testid*='response' i], .response-container, .markdown, message-content"
@@ -370,8 +409,6 @@ def get_last_response(page: Page) -> str:
         count = answer_area.count()
         if count == 0:
             return ""
-
-        # Get the last element
         last_response = answer_area.nth(count - 1)
         return last_response.inner_text()
     except Exception:

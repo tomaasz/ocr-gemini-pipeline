@@ -1,15 +1,61 @@
+# src/ocr_gemini/cli.py
+from __future__ import annotations
+
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
+from typing import List, Optional, Set
 
-from .engine.playwright_engine import PlaywrightEngine
-from .engine.errors import classify_error, ErrorKind
-from .engine.retry_logic import decide_retry_action
 from .config import PipelineConfig
 from .db import db_config_from_env
 from .db.repo import OcrRepo
+from .engine.errors import ErrorKind, classify_error
+from .engine.playwright_engine import PlaywrightEngine
+from .engine.retry_logic import decide_retry_action
 from .files import sha256_file
+
+IMAGE_EXTS: Set[str] = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}
+
+
+def _scan_images(input_dir: Path, recursive: bool, limit: int) -> List[Path]:
+    """
+    Fast scan for images.
+    - recursive=False: only direct children (iterdir)
+    - recursive=True: os.walk (streaming) + early stop when limit reached
+
+    Returns list of image paths (sorted for determinism).
+    """
+    found: List[Path] = []
+
+    if not input_dir.exists() or not input_dir.is_dir():
+        return found
+
+    # normalize
+    lim = int(limit) if limit else 0
+
+    if not recursive:
+        for p in input_dir.iterdir():
+            if p.is_file() and p.suffix.lower() in IMAGE_EXTS:
+                found.append(p)
+                if lim and len(found) >= lim:
+                    break
+        return sorted(found)
+
+    # recursive walk
+    for root, dirnames, filenames in os.walk(input_dir, followlinks=False):
+        # optionally prune hidden dirs
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+
+        for fn in filenames:
+            p = Path(root) / fn
+            if p.suffix.lower() in IMAGE_EXTS:
+                found.append(p)
+                if lim and len(found) >= lim:
+                    return sorted(found)
+
+    return sorted(found)
 
 
 def main() -> None:
@@ -20,6 +66,9 @@ def main() -> None:
     parser.add_argument("--limit", type=int, help="Max number of images to process")
     parser.add_argument("--headless", action="store_true", help="Run in headless mode")
     parser.add_argument("--debug-dir", type=Path, help="Directory for debug artifacts")
+
+    # NEW
+    parser.add_argument("--recursive", action="store_true", help="Scan input directory recursively")
 
     # Stage 1.5 args
     parser.add_argument("--resume", action="store_true", help="Resume failed/missing runs only")
@@ -43,7 +92,7 @@ def main() -> None:
     cfg = PipelineConfig(
         ocr_root=args.input_dir,
         out_root=args.out_dir,
-        prompt_id="Transcribe text",  # default
+        prompt_id="Transcribe text",
         limit=args.limit or 0,
         debug_dir=args.debug_dir if args.debug_dir else args.out_dir / "debug",
         resume=bool(args.resume),
@@ -64,7 +113,7 @@ def main() -> None:
         cfg.debug_dir.mkdir(parents=True, exist_ok=True)
 
     # Initialize DB Repo if DSN available
-    repo = None
+    repo: Optional[OcrRepo] = None
     db_cfg = db_config_from_env()
     if getattr(db_cfg, "dsn", None):
         try:
@@ -78,22 +127,12 @@ def main() -> None:
         print("Error: --retry-failed requires DB connection.")
         sys.exit(1)
 
-    # Scan images
-    extensions = {".jpg", ".jpeg", ".png", ".webp"}
-    images = sorted(
-        [
-            p
-            for p in cfg.ocr_root.iterdir()
-            if p.is_file() and p.suffix.lower() in extensions
-        ]
-    )
+    # FAST scan (with early stop on limit)
+    images = _scan_images(cfg.ocr_root, recursive=bool(args.recursive), limit=int(cfg.limit))
 
     if not images:
         print(f"No images found in {cfg.ocr_root}")
         return
-
-    if cfg.limit:
-        images = images[: cfg.limit]
 
     print(f"Processing {len(images)} images...")
 
@@ -137,7 +176,6 @@ def main() -> None:
                     if cfg.retry_failed:
                         print("  Aborting document due to DB error with --retry-failed.")
                         continue
-                    # Fallback: process without history
                     attempt_no = 1
                     parent_run_id = None
 
@@ -220,7 +258,6 @@ def main() -> None:
                             "failed",
                             error_message=str(e),
                         )
-
                     break
 
     except KeyboardInterrupt:

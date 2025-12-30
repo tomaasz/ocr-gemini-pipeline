@@ -54,8 +54,6 @@ class PlaywrightEngine(OcrEngine):
             try:
                 self.session.page.reload()
             except Exception as e:
-                # If reload fails, we might need to restart browser,
-                # but let's keep it bounded to reload for now.
                 raise RuntimeError(f"Recovery (reload) failed: {e}") from e
 
     def ocr(self, image_path: Path, prompt_id: str) -> OcrResult:
@@ -68,29 +66,25 @@ class PlaywrightEngine(OcrEngine):
         """
         try:
             page = self.session.page
-        except RuntimeError:
-            # If session not started, start it implicitly or fail?
-            # Plan says Orchestrator (CLI) calls start.
-            raise RuntimeError("Engine not started. Call start() before ocr().")
+        except RuntimeError as e:
+            raise RuntimeError("Engine not started. Call start() before ocr().") from e
 
         try:
             # 1. Navigate (if needed)
-            if "gemini.google.com" not in page.url:
+            if "gemini.google.com" not in (page.url or ""):
                 page.goto("https://gemini.google.com/app", timeout=60000)
 
-            # 2. Upload image
+            # 2. Upload image (robust implementation lives in actions.upload_image)
             actions.upload_image(
                 page,
                 image_path,
                 timeout_ms=30000,
-                debug_dir=self.debug_dir
+                debug_dir=self.debug_dir,
             )
 
             # 3. Enter Prompt
             prompt_text = prompt_id if prompt_id else "Extract text from this image."
 
-            # Simple interaction to fill prompt
-            # We assume composer is available if upload succeeded
             composer = page.locator("div[contenteditable='true']").first
             composer.click()
             composer.fill(prompt_text)
@@ -99,7 +93,7 @@ class PlaywrightEngine(OcrEngine):
             actions.send_message(
                 page,
                 debug_dir=self.debug_dir,
-                generation_timeout_ms=self.timeout_ms
+                generation_timeout_ms=self.timeout_ms,
             )
 
             # 5. Get Result
@@ -107,9 +101,12 @@ class PlaywrightEngine(OcrEngine):
 
             return OcrResult(
                 text=text,
-                data={"image": str(image_path), "status": "success"}
+                data={"image": str(image_path), "status": "success"},
             )
 
-        except Exception as e:
-            save_debug_artifacts(page, self.debug_dir, f"ocr_failed_{image_path.name}")
-            raise e
+        except Exception:
+            try:
+                save_debug_artifacts(page, self.debug_dir, f"ocr_failed_{image_path.name}")
+            except Exception:
+                pass
+            raise
