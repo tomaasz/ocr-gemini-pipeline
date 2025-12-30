@@ -1,12 +1,12 @@
 from unittest.mock import MagicMock, patch, call
 from pathlib import Path
 import pytest
-from src.ocr_gemini.cli import main
+from ocr_gemini.cli import main
 import sys
 
 class TestCLI:
-    @patch("src.ocr_gemini.cli.PlaywrightEngine")
-    @patch("src.ocr_gemini.cli.argparse.ArgumentParser.parse_args")
+    @patch("ocr_gemini.cli.PlaywrightEngine")
+    @patch("ocr_gemini.cli.argparse.ArgumentParser.parse_args")
     def test_cli_execution_flow(self, mock_args, mock_engine_cls, tmp_path, capsys):
         # Setup input files
         input_dir = tmp_path / "in"
@@ -57,8 +57,8 @@ class TestCLI:
         assert (out_dir / "1.txt").read_text(encoding="utf-8") == "OCR Output"
         assert (out_dir / "2.txt").read_text(encoding="utf-8") == "OCR Output"
 
-    @patch("src.ocr_gemini.cli.PlaywrightEngine")
-    @patch("src.ocr_gemini.cli.argparse.ArgumentParser.parse_args")
+    @patch("ocr_gemini.cli.PlaywrightEngine")
+    @patch("ocr_gemini.cli.argparse.ArgumentParser.parse_args")
     def test_cli_limit(self, mock_args, mock_engine_cls, tmp_path):
         input_dir = tmp_path / "in"
         input_dir.mkdir()

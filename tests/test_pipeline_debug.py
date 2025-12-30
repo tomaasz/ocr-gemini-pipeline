@@ -3,7 +3,7 @@ from unittest.mock import Mock, MagicMock
 from pathlib import Path
 
 from ocr_gemini.pipeline import Pipeline, PipelineConfig
-from ocr_gemini.ui.engine import OcrResult
+from ocr_gemini.engine.core import OcrResult
 from ocr_gemini.files import DiscoveredFile
 
 @pytest.fixture

@@ -1,18 +1,18 @@
 from unittest.mock import MagicMock, patch, call
 from pathlib import Path
 import pytest
-from src.ocr_gemini.engine.playwright_engine import PlaywrightEngine
-from src.ocr_gemini.ui import actions
+from ocr_gemini.engine.playwright_engine import PlaywrightEngine
+from ocr_gemini.ui import actions
 
 class TestPlaywrightEngine:
     @pytest.fixture
     def mock_session(self):
-        with patch("src.ocr_gemini.engine.playwright_engine.BrowserSession") as mock:
+        with patch("ocr_gemini.engine.playwright_engine.BrowserSession") as mock:
             yield mock
 
     @pytest.fixture
     def mock_actions(self):
-        with patch("src.ocr_gemini.engine.playwright_engine.actions") as mock:
+        with patch("ocr_gemini.engine.playwright_engine.actions") as mock:
             yield mock
 
     def test_init(self, mock_session):
