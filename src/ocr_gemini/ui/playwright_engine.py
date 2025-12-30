@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -21,7 +22,7 @@ class PlaywrightEngine(OcrEngine):
         self,
         debug_dir: Optional[Path] = None,
         timeout_ms: int = 180000,
-        workers: int = 1,
+        workers: Optional[int] = None,
     ) -> None:
         """
         Initialize the PlaywrightEngine.
@@ -29,7 +30,8 @@ class PlaywrightEngine(OcrEngine):
         Args:
             debug_dir: Directory to save debug artifacts on failure.
             timeout_ms: Global timeout for UI operations in milliseconds.
-            workers: Number of concurrent browser workers to use (default: 1).
+            workers: Number of concurrent browser workers to use.
+                     If None, defaults to OCR_MAX_WORKERS env var (default: 1).
 
         Legacy evidence:
             - `legacy/gemini_ocr.py` lines 902 (`OCR_WORKER_ID`) and 946 (`--profile-dir`)
@@ -38,6 +40,10 @@ class PlaywrightEngine(OcrEngine):
         """
         self.debug_dir = debug_dir
         self.timeout_ms = timeout_ms
+
+        if workers is None:
+            workers = int(os.environ.get("OCR_MAX_WORKERS", 1))
+
         self.worker_pool = WorkerPool(size=workers)
         # TODO: self.worker_pool.start() should be called, but we are keeping it minimal for now.
 

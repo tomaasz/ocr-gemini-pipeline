@@ -50,7 +50,7 @@ Configuration options for debugging failures:
 *   **`OCR_UI_TIMEOUT_MS`**: Global timeout for UI operations (default: 180,000 ms).
     *   *Note: Currently plumbing only. Will be wired to Playwright engine in future stages.*
 *   **`workers`** (Config param): Number of concurrent browser workers to use (default: 1).
-    *   Configurable in `PlaywrightEngine` to enable parallel processing of items.
+    *   Configurable in `PlaywrightEngine` via `OCR_MAX_WORKERS` environment variable or constructor argument to enable parallel processing of items.
 
 ### Legacy Evidence (Reference)
 
