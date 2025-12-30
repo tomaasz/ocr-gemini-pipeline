@@ -1,6 +1,5 @@
 import argparse
 import sys
-import os
 import time
 from pathlib import Path
 
@@ -11,6 +10,7 @@ from .config import PipelineConfig
 from .db import db_config_from_env
 from .db.repo import OcrRepo
 from .files import sha256_file
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="OCR Gemini CLI Runner")
@@ -29,27 +29,30 @@ def main() -> None:
     parser.add_argument("--retry-failed", action="store_true", help="Retry failed documents (requires DB)")
     parser.add_argument("--max-attempts", type=int, default=3, help="Max attempts per document")
     parser.add_argument("--retry-backoff-seconds", type=int, default=0, help="Wait between attempts (seconds)")
-    parser.add_argument("--retry-error-kinds", type=str, default="transient,unknown", help="Comma-separated list of error kinds to retry")
+    parser.add_argument(
+        "--retry-error-kinds",
+        type=str,
+        default="transient,unknown",
+        help="Comma-separated list of error kinds to retry",
+    )
 
     args = parser.parse_args()
 
-    # Parse error kinds
-    retry_kinds = [k.strip().lower() for k in args.retry_error_kinds.split(",")]
+    retry_kinds = [k.strip().lower() for k in (args.retry_error_kinds or "").split(",") if k.strip()]
 
-    # Build PipelineConfig
     cfg = PipelineConfig(
         ocr_root=args.input_dir,
         out_root=args.out_dir,
-        prompt_id="Transcribe text", # default
+        prompt_id="Transcribe text",  # default
         limit=args.limit or 0,
         debug_dir=args.debug_dir if args.debug_dir else args.out_dir / "debug",
-        resume=args.resume,
-        force=args.force,
+        resume=bool(args.resume),
+        force=bool(args.force),
         pipeline_name="gemini-ui-cli",
-        retry_failed=args.retry_failed,
-        max_attempts=args.max_attempts,
-        retry_backoff_seconds=args.retry_backoff_seconds,
-        retry_error_kinds=retry_kinds
+        retry_failed=bool(args.retry_failed),
+        max_attempts=int(args.max_attempts),
+        retry_backoff_seconds=int(args.retry_backoff_seconds),
+        retry_error_kinds=retry_kinds,
     )
 
     if not cfg.ocr_root.exists():
@@ -63,7 +66,7 @@ def main() -> None:
     # Initialize DB Repo if DSN available
     repo = None
     db_cfg = db_config_from_env()
-    if db_cfg.dsn:
+    if getattr(db_cfg, "dsn", None):
         try:
             repo = OcrRepo(db_cfg)
             print("DB Write-back enabled.")
@@ -77,24 +80,27 @@ def main() -> None:
 
     # Scan images
     extensions = {".jpg", ".jpeg", ".png", ".webp"}
-    images = sorted([
-        p for p in cfg.ocr_root.iterdir()
-        if p.is_file() and p.suffix.lower() in extensions
-    ])
+    images = sorted(
+        [
+            p
+            for p in cfg.ocr_root.iterdir()
+            if p.is_file() and p.suffix.lower() in extensions
+        ]
+    )
 
     if not images:
         print(f"No images found in {cfg.ocr_root}")
         return
 
     if cfg.limit:
-        images = images[:cfg.limit]
+        images = images[: cfg.limit]
 
     print(f"Processing {len(images)} images...")
 
     engine = PlaywrightEngine(
         profile_dir=args.profile_dir,
         headless=args.headless,
-        debug_dir=cfg.debug_dir
+        debug_dir=cfg.debug_dir,
     )
 
     try:
@@ -102,13 +108,12 @@ def main() -> None:
         engine.start()
 
         for i, img_path in enumerate(images):
-            print(f"[{i+1}/{len(images)}] Checking {img_path.name}...")
+            print(f"[{i + 1}/{len(images)}] Checking {img_path.name}...")
 
             run_id = None
             doc_id = None
             last_run = None
 
-            # --- Decision Logic ---
             attempt_no = 1
             parent_run_id = None
 
@@ -120,45 +125,36 @@ def main() -> None:
 
                     decision = decide_retry_action(last_run, cfg)
 
-                    if not decision["should_process"]:
-                        print(f"  SKIPPING: {decision['reason']}")
-                        # If previously processed but we are skipping, we don't need to do anything
-                        # unless we want to record a 'skipped' status for this CLI execution?
-                        # The requirements say "record each attempt".
-                        # If we explicitly skip, we might not need an ocr_run row unless we want to log the skip.
-                        # Stage 1.5 had logic to insert 'skipped' if skipping done items.
-                        # Let's preserve that behavior if it's a "fresh" skip (e.g. no run exists but we skip?? No, that's impossible).
-                        # If we skip because it's done, we can log it if we want, but usually unnecessary spam.
-                        # Only if we skip for a reason that might be interesting?
-                        # For now, just continue.
+                    if not decision.get("should_process", True):
+                        print(f"  SKIPPING: {decision.get('reason', 'no reason')}")
                         continue
 
-                    attempt_no = decision["attempt_no"]
-                    parent_run_id = decision["parent_run_id"]
+                    attempt_no = int(decision.get("attempt_no", 1))
+                    parent_run_id = decision.get("parent_run_id", None)
 
                 except Exception as e:
                     print(f"  DB Error (pre-flight): {e}")
                     if cfg.retry_failed:
                         print("  Aborting document due to DB error with --retry-failed.")
                         continue
-                    # Fallback to process if not strictly depending on history
-                    # If DB failed, we can't get last run, so we default to process (attempt 1)
-                    pass
+                    # Fallback: process without history
+                    attempt_no = 1
+                    parent_run_id = None
 
             # Backoff (between attempts)
             if attempt_no > 1 and cfg.retry_backoff_seconds > 0:
-                 print(f"  Waiting {cfg.retry_backoff_seconds}s before retry...")
-                 time.sleep(cfg.retry_backoff_seconds)
+                print(f"  Waiting {cfg.retry_backoff_seconds}s before retry...")
+                time.sleep(cfg.retry_backoff_seconds)
 
-            # --- Execution ---
+            # Create run row
             if repo:
-                 run_id = repo.create_run(
-                     doc_id,
-                     cfg.pipeline_name,
-                     status='queued',
-                     attempt_no=attempt_no,
-                     parent_run_id=parent_run_id
-                 )
+                run_id = repo.create_run(
+                    doc_id,
+                    cfg.pipeline_name,
+                    status="queued",
+                    attempt_no=attempt_no,
+                    parent_run_id=parent_run_id,
+                )
 
             # Recovery loop (within attempt)
             max_recovery_retries = 1
@@ -167,59 +163,81 @@ def main() -> None:
             while True:
                 try:
                     if repo and run_id:
-                        repo.mark_run_status(run_id, 'processing')
-                        repo.mark_step(run_id, 'engine_start', 'started')
+                        repo.mark_run_status(run_id, "processing")
+                        repo.mark_step(run_id, "engine_start", "started")
 
                     result = engine.ocr(img_path, prompt_id=cfg.prompt_id)
 
-                    # Save result
                     out_txt = cfg.out_root / f"{img_path.stem}.txt"
                     out_txt.write_text(result.text, encoding="utf-8")
                     print(f"  OK: Saved to {out_txt}")
 
                     if repo and run_id:
-                        repo.mark_run_status(run_id, 'done', out_path=str(out_txt))
-                        repo.mark_step(run_id, 'engine_finish', 'done')
+                        repo.mark_run_status(run_id, "done", out_path=str(out_txt))
+                        repo.mark_step(run_id, "engine_finish", "done")
 
-                    break # Success, exit recovery loop
+                    break
 
                 except Exception as e:
-                    # Classify error
                     kind = classify_error(e)
                     print(f"  Error: {e} [{kind.value}]")
 
-                    # Recovery Attempt
+                    # Recovery attempt (transient only)
                     if kind == ErrorKind.TRANSIENT and recovery_count < max_recovery_retries:
-                         recovery_count += 1
-                         print(f"  Attempting recovery ({recovery_count}/{max_recovery_retries})...")
-                         if repo and run_id:
-                             repo.mark_step(run_id, 'recover_refresh', 'started')
+                        recovery_count += 1
+                        print(f"  Attempting recovery ({recovery_count}/{max_recovery_retries})...")
 
-                         try:
-                             engine.recover()
-                             if repo and run_id:
-                                 repo.mark_step(run_id, 'recover_refresh', 'done')
-                         except Exception as rec_e:
-                             print(f"  Recovery failed: {rec_e}")
-                             if repo and run_id:
-                                 repo.mark_step(run_id, 'recover_refresh', 'failed', str(rec_e))
+                        if repo and run_id:
+                            repo.mark_step(run_id, "recover_refresh", "started")
 
-                         continue # Retry loop
+                        try:
+                            engine.recover()
+                            if repo and run_id:
+                                repo.mark_step(run_id, "recover_refresh", "done")
+                        except Exception as rec_e:
+                            print(f"  Recovery failed: {rec_e}")
+                            if repo and run_id:
+                                repo.mark_step(
+                                    run_id,
+                                    "recover_refresh",
+                                    "failed",
+                                    error_message=str(rec_e),
+                                )
 
-                    # Final Failure for this attempt
+                        continue
+
+                    # Final failure for this attempt
                     if repo and run_id:
-                         repo.mark_run_status(run_id, 'failed', error_message=str(e), error_kind=kind.value)
-                         repo.mark_step(run_id, 'engine_finish', 'failed', error_message=str(e))
+                        repo.mark_run_status(
+                            run_id,
+                            "failed",
+                            error_message=str(e),
+                            error_kind=kind.value,
+                        )
+                        repo.mark_step(
+                            run_id,
+                            "engine_finish",
+                            "failed",
+                            error_message=str(e),
+                        )
 
-                    break # Exit recovery loop
+                    break
 
     except KeyboardInterrupt:
         print("\nInterrupted by user.")
     finally:
         print("Stopping engine...")
-        engine.stop()
+        try:
+            engine.stop()
+        except Exception:
+            pass
+
         if repo:
-            repo.close()
+            try:
+                repo.close()
+            except Exception:
+                pass
+
 
 if __name__ == "__main__":
     main()

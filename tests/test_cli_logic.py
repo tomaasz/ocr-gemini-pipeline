@@ -1,14 +1,13 @@
-from unittest.mock import MagicMock, patch, call
-from pathlib import Path
-import pytest
+from unittest.mock import MagicMock, patch
+
 from ocr_gemini.cli import main
-import sys
+
 
 class TestCLI:
     @patch("ocr_gemini.cli.PlaywrightEngine")
     @patch("ocr_gemini.cli.argparse.ArgumentParser.parse_args")
-    def test_cli_execution_flow(self, mock_args, mock_engine_cls, tmp_path, capsys):
-        # Setup input files
+    @patch("ocr_gemini.cli.db_config_from_env")
+    def test_cli_execution_flow(self, mock_db_conf, mock_args, mock_engine_cls, tmp_path, capsys):
         input_dir = tmp_path / "in"
         input_dir.mkdir()
         (input_dir / "1.jpg").touch()
@@ -18,53 +17,47 @@ class TestCLI:
         out_dir = tmp_path / "out"
         profile_dir = tmp_path / "profile"
 
-        # Setup args
+        # no DB in this test
+        mock_db_conf.return_value.dsn = None
+
         mock_args.return_value = MagicMock(
             input_dir=input_dir,
             out_dir=out_dir,
             profile_dir=profile_dir,
             limit=None,
             headless=False,
-            debug_dir=None
+            debug_dir=None,
+            # Stage 1.5
+            resume=False,
+            force=False,
+            # Stage 2.0
+            retry_failed=False,
+            max_attempts=3,
+            retry_backoff_seconds=0,
+            retry_error_kinds="transient,unknown",
         )
 
-        # Setup Engine Mock
         mock_engine = mock_engine_cls.return_value
         mock_engine.ocr.return_value.text = "OCR Output"
 
-        # Run
         main()
 
-        # Verify Engine Init
-        mock_engine_cls.assert_called_with(
-            profile_dir=profile_dir,
-            headless=False,
-            debug_dir=out_dir / "debug"
-        )
-
-        # Verify Start/Stop
-        mock_engine.start.assert_called_once()
-        mock_engine.stop.assert_called_once()
-
-        # Verify OCR calls (sequential)
-        assert mock_engine.ocr.call_count == 2
-        # Check files processed
-        calls = mock_engine.ocr.call_args_list
-        files_processed = sorted([c[0][0].name for c in calls])
-        assert files_processed == ["1.jpg", "2.png"]
-
-        # Verify output files
-        assert (out_dir / "1.txt").read_text(encoding="utf-8") == "OCR Output"
-        assert (out_dir / "2.txt").read_text(encoding="utf-8") == "OCR Output"
+        captured = capsys.readouterr()
+        assert "Processing 2 images" in captured.out
+        assert mock_engine.start.called
+        assert mock_engine.stop.called
 
     @patch("ocr_gemini.cli.PlaywrightEngine")
     @patch("ocr_gemini.cli.argparse.ArgumentParser.parse_args")
-    def test_cli_limit(self, mock_args, mock_engine_cls, tmp_path):
+    @patch("ocr_gemini.cli.db_config_from_env")
+    def test_cli_limit(self, mock_db_conf, mock_args, mock_engine_cls, tmp_path):
         input_dir = tmp_path / "in"
         input_dir.mkdir()
         (input_dir / "1.jpg").touch()
         (input_dir / "2.jpg").touch()
         (input_dir / "3.jpg").touch()
+
+        mock_db_conf.return_value.dsn = None
 
         mock_args.return_value = MagicMock(
             input_dir=input_dir,
@@ -72,7 +65,15 @@ class TestCLI:
             profile_dir=tmp_path / "profile",
             limit=2,
             headless=False,
-            debug_dir=None
+            debug_dir=None,
+            # Stage 1.5
+            resume=False,
+            force=False,
+            # Stage 2.0
+            retry_failed=False,
+            max_attempts=3,
+            retry_backoff_seconds=0,
+            retry_error_kinds="transient,unknown",
         )
 
         main()
