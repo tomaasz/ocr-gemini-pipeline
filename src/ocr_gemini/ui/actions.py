@@ -271,18 +271,23 @@ def _assert_on_gemini_chat(page: Page) -> None:
 
 def _try_filechooser_upload(page: Page, file_path: str, trigger_budget_ms: int) -> bool:
     """
-    Próbujemy znaleźć przycisk/ikonę, która otwiera FileChooser.
-    Zamiast kilku sztywnych selectorów – robimy skan po button / role=button
-    i szukamy po aria-label/title/tekście.
+    Attempts to trigger upload via file chooser, handling both direct buttons and menu-based flows.
     """
-    rx = re.compile(
+    # Regex for the initial button ("Add", "Plus", "Attach")
+    rx_btn = re.compile(
         r"(upload|attach|add|file|image|photo|picture|"
         r"prześlij|przeslij|załącz|zalacz|dodaj|plik|obraz|zdj[eę]cie|grafika)",
         re.I,
     )
 
-    root = _composer_root(page)
+    # Regex for the menu item if the button opens a menu
+    rx_menu = re.compile(
+        r"(upload|image|photo|picture|computer|device|"
+        r"prześlij|obraz|zdj[eę]cie|komputer|urządzeni)",
+        re.I,
+    )
 
+    root = _composer_root(page)
     candidates = root.locator("button, [role='button']")
     n = min(candidates.count(), 320)
 
@@ -292,26 +297,55 @@ def _try_filechooser_upload(page: Page, file_path: str, trigger_budget_ms: int) 
             if not el.is_visible():
                 continue
 
+            # Check if button matches "Add/Attach" logic
             aria = (el.get_attribute("aria-label") or "").strip()
             title = (el.get_attribute("title") or "").strip()
             txt = ""
             try:
                 txt = (el.inner_text() or "").strip()
             except Exception:
-                txt = ""
-
-            blob = " ".join([aria, title, txt]).strip()
-            if not blob or not rx.search(blob):
-                # czasem label jest na child (svg/span) – próbujemy jeszcze has_text
                 pass
 
-            # jeśli coś pasuje, próbujemy FileChooser
-            if rx.search(blob):
-                with page.expect_file_chooser(timeout=trigger_budget_ms) as fc_info:
-                    el.click()
+            blob = " ".join([aria, title, txt]).strip()
+
+            if not blob or not rx_btn.search(blob):
+                continue
+
+            # Attempt 1: Direct click expecting file chooser
+            # We use a short timeout because if it's a menu, it will timeout quickly.
+            try:
+                # Short timeout to detect if it's NOT a direct file chooser
+                with page.expect_file_chooser(timeout=2000) as fc_info:
+                    el.click(timeout=1000)
+
                 chooser = fc_info.value
                 chooser.set_files(file_path)
                 return True
+            except Exception:
+                # If direct upload failed (likely timeout), check if a menu opened
+                try:
+                    # Look for common menu containers
+                    menu = page.locator(
+                        "div[role='menu'], ul[role='menu'], .mat-mdc-menu-panel, [data-role='menu']"
+                    ).first
+                    if menu.is_visible():
+                        # Search for upload item within the menu
+                        items = menu.locator("[role='menuitem'], button, li")
+                        target = items.filter(has_text=rx_menu).first
+                        if target.is_visible():
+                            with page.expect_file_chooser(
+                                timeout=trigger_budget_ms
+                            ) as fc_info_2:
+                                target.click(timeout=1000)
+                            chooser = fc_info_2.value
+                            chooser.set_files(file_path)
+                            return True
+                except Exception:
+                    pass
+
+                # If neither worked, loop continues to next candidate
+                pass
+
         except Exception:
             continue
 
