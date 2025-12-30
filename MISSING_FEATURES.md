@@ -25,3 +25,17 @@
     - Waits for "Stop" to appear (start confirmation).
     - Then waits for "Stop" to disappear (finish confirmation).
     - If "Stop" never appears but send was confirmed, assumes finished (per user requirement).
+
+### DB Write-back & Run States (Stage 1.5)
+- **Added**: `OcrRepo` in `src/ocr_gemini/db/repo.py` for DB persistence.
+- **Added**: `ocr_document`, `ocr_run`, `ocr_step` tables (via `sql/001_initial_schema.sql`).
+- **Added**: `--resume` and `--force` flags in CLI.
+- **Features**:
+    - Idempotency: Skips already processed files (status='skipped').
+    - Resume: Processes only failed/missing files.
+    - Run History: Tracks status, timestamps, and error details per run.
+
+## Remaining for Stage 2
+- Retry/Backoff Logic (auto-recovery from transient failures).
+- Headless Cron Mode (fully automated execution).
+- Worker Pool integration (if needed for parallelism).
