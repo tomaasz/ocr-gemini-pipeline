@@ -1,7 +1,7 @@
 import os
 from unittest.mock import patch
-from src.ocr_gemini.ui.playwright_engine import PlaywrightEngine
-from src.ocr_gemini.ui.worker_pool import WorkerPool
+from ocr_gemini.ui.playwright_engine import PlaywrightEngine
+from ocr_gemini.ui.worker_pool import WorkerPool
 
 def test_engine_initializes_worker_pool():
     engine = PlaywrightEngine(workers=2)
