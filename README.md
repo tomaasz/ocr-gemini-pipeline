@@ -63,3 +63,11 @@ Reusable, pure-logic helpers are available in `src/ocr_gemini/utils.py` to impro
 *   **`wait_for_generation_complete`**: Generic polling for process completion (e.g. generation).
 
 These helpers abstract the retry/wait logic found in the legacy codebase (e.g., `send_message_with_retry`, `wait_generation_cycle`).
+
+## Stage 2: Playwright Engine (planned)
+
+A real Playwright-based engine (`PlaywrightEngine`) is being designed to replace the `FakeEngine`.
+This engine will:
+- Drive a real browser instance.
+- Integrate with `retry_call` and `wait_for_generation_complete` for reliability.
+- Produce debug artifacts using `save_debug_artifacts` upon failure.
