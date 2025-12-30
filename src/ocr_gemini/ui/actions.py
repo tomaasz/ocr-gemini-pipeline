@@ -130,10 +130,51 @@ def _find_send_button(page: Page) -> Optional[Locator]:
     return None
 
 
+def wait_for_generation_complete(
+    page: Page, timeout_ms: int, debug_dir: Optional[Path] = None
+) -> None:
+    """
+    Waits for the generation to complete by observing the Stop button.
+
+    Logic:
+    1. Wait for "Stop" button to appear (generation started).
+       - Uses a short timeout (5000ms).
+       - If it doesn't appear, we assume generation finished very quickly or never
+         showed the button (per user req: "Stop never appeared -> treat as already finished").
+    2. Wait for "Stop" button to disappear (generation finished).
+
+    Args:
+        page: Playwright Page object.
+        timeout_ms: Max time to wait for completion.
+        debug_dir: Directory to save debug artifacts on failure.
+    """
+    stop_like = page.locator("text=/Stop|Zatrzymaj|Anuluj|Cancel|Stop generating/i")
+
+    # 1. Wait for Start (Stop button visible)
+    try:
+        # We use a short timeout because send_message likely already confirmed start.
+        # But if we are called late, it might already be gone.
+        stop_like.first.wait_for(state="visible", timeout=5000)
+    except Exception:
+        # "Stop never appeared -> treat as already finished"
+        # We log nothing or maybe debug log if we had a logger.
+        pass
+
+    # 2. Wait for Finish (Stop button hidden)
+    try:
+        stop_like.first.wait_for(state="hidden", timeout=timeout_ms)
+    except Exception:
+        save_debug_artifacts(page, debug_dir, "wait_gen_complete_timeout")
+        raise UIActionTimeoutError(
+            f"Generation did not complete (Stop button still visible) within {timeout_ms}ms"
+        )
+
+
 def send_message(
     page: Page,
     send_timeout_ms: int = 5000,
     confirm_timeout_ms: int = 10000,
+    generation_timeout_ms: int = 120000,
     debug_dir: Optional[Path] = None,
 ) -> None:
     """
@@ -145,11 +186,13 @@ def send_message(
     1. Try clicking the "Send" button (if found).
     2. Fallback: Focus composer and press Enter.
     3. Confirm generation started (Stop button or response container).
+    4. Wait for generation to complete (Stop button disappears).
 
     Args:
         page: Playwright Page object.
         send_timeout_ms: Max time to attempt triggering the send action.
         confirm_timeout_ms: Max time to wait for confirmation (generation start).
+        generation_timeout_ms: Max time to wait for generation to complete.
         debug_dir: Directory to save debug artifacts on failure.
 
     Raises:
@@ -189,24 +232,32 @@ def send_message(
 
         # 3) Confirmation check
         t0 = time.time()
+        confirmed = False
         while (time.time() - t0) * 1000 < confirm_timeout_ms:
             try:
                 if stop_like.count() > 0 and stop_like.first.is_visible():
-                    return  # Success
+                    confirmed = True
+                    break
             except Exception:
                 pass
 
             try:
                 if answer_area.count() > 0:
-                    return  # Success (response appeared fast)
+                    confirmed = True
+                    break
             except Exception:
                 pass
 
             page.wait_for_timeout(200)
 
+        if confirmed:
+            # 4) Wait for generation complete
+            wait_for_generation_complete(page, generation_timeout_ms, debug_dir)
+            return
+
         # If we are here, confirmation timed out for this attempt.
         save_debug_artifacts(page, debug_dir, f"send_no_confirmation_{attempt}")
-        page.wait_for_timeout(500) # Wait a bit before retry
+        page.wait_for_timeout(500)  # Wait a bit before retry
 
     # If all retries failed
     save_debug_artifacts(page, debug_dir, "send_failed_final")
