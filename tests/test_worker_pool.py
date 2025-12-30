@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock
-from src.ocr_gemini.ui.worker_pool import WorkerPool, Worker
+from ocr_gemini.ui.worker_pool import WorkerPool, Worker
 
 def test_worker_pool_initialization():
     pool = WorkerPool(size=2)
