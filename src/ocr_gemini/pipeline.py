@@ -13,7 +13,8 @@ from .debug import save_debug_artifacts
 from .files import DiscoveredFile, iter_files, with_sha256
 from .metrics import DocumentMetrics
 from .output import write_outputs
-from .ui.engine import OcrEngine
+from .engine.core import OcrEngine
+
 from .ui.fake_engine import FakeEngine
 
 

@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .engine import OcrEngine, OcrResult
-
+from ocr_gemini.engine.core import OcrEngine, OcrResult
 
 class FakeEngine(OcrEngine):
     def ocr(self, image_path: Path, prompt_id: str) -> OcrResult:
