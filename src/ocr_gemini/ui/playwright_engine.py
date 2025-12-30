@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Optional
 
 from ..debug import save_debug_artifacts
 from ..utils import retry_call, wait_for_generation_complete
 from .engine import OcrEngine, OcrResult
+from .worker_pool import WorkerPool, Worker
 
 
 class PlaywrightEngine(OcrEngine):
@@ -17,7 +19,10 @@ class PlaywrightEngine(OcrEngine):
     """
 
     def __init__(
-        self, debug_dir: Optional[Path] = None, timeout_ms: int = 180000
+        self,
+        debug_dir: Optional[Path] = None,
+        timeout_ms: int = 180000,
+        workers: Optional[int] = None,
     ) -> None:
         """
         Initialize the PlaywrightEngine.
@@ -25,14 +30,22 @@ class PlaywrightEngine(OcrEngine):
         Args:
             debug_dir: Directory to save debug artifacts on failure.
             timeout_ms: Global timeout for UI operations in milliseconds.
+            workers: Number of concurrent browser workers to use.
+                     If None, defaults to OCR_MAX_WORKERS env var (default: 1).
 
-        TODO:
-            - Initialize Playwright instance (browser lifecycle management).
-            - Set up browser context and page management strategies.
-            - Configure browser launch options (headless, args, etc.).
+        Legacy evidence:
+            - `legacy/gemini_ocr.py` lines 902 (`OCR_WORKER_ID`) and 946 (`--profile-dir`)
+              supported concurrent execution via external orchestration (multiple processes).
+            - This new implementation brings concurrency *internally* via a worker pool.
         """
         self.debug_dir = debug_dir
         self.timeout_ms = timeout_ms
+
+        if workers is None:
+            workers = int(os.environ.get("OCR_MAX_WORKERS", 1))
+
+        self.worker_pool = WorkerPool(size=workers)
+        # TODO: self.worker_pool.start() should be called, but we are keeping it minimal for now.
 
     def ocr(self, image_path: Path, prompt_id: str) -> OcrResult:
         """
