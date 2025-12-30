@@ -25,7 +25,7 @@ def decide_retry_action(
     }
 
     if not last_run:
-        # No history
+        # No history (or pipeline mismatch led to no history returned)
         if cfg.retry_failed:
              action["should_process"] = False
              action["reason"] = "No prior run (and --retry-failed is set)"
@@ -51,12 +51,10 @@ def decide_retry_action(
         return action
 
     if status == 'skipped':
-        if cfg.resume or cfg.retry_failed:
-            action["should_process"] = True
-            action["reason"] = "Resuming skipped"
-        else:
-            action["should_process"] = False
-            action["reason"] = "Previously skipped"
+        # Skipped items are not retried by default, even with --resume/--retry-failed.
+        # They require --force.
+        action["should_process"] = False
+        action["reason"] = "Previously skipped (use --force to retry)"
         return action
 
     if status == 'failed':
@@ -78,10 +76,6 @@ def decide_retry_action(
             return action
 
         # Check retryable kinds
-        # If prev_kind is None, we assume it's unknown/retryable to be safe,
-        # or we could be strict. Requirement says "unknown -> treated as transient".
-        # If the user specified specific kinds, we check against that.
-
         kind_to_check = prev_kind if prev_kind else "unknown"
         if kind_to_check in cfg.retry_error_kinds:
              action["should_process"] = True
@@ -93,20 +87,12 @@ def decide_retry_action(
         return action
 
     # Status 'processing' or 'queued' - usually implies interrupted or stuck.
-    # Treat as failed/retryable if resuming?
     if status in ('processing', 'queued'):
          if cfg.resume or cfg.retry_failed:
-              # We treat interrupted runs as retryable if we are in resume mode.
-              # They count as an attempt? Usually yes.
               action["should_process"] = True
               action["reason"] = f"Resuming incomplete run ({status})"
          else:
-              action["should_process"] = False # Default is safe skip? or re-run?
-              # Stage 1.5 logic said: "Resume failed/missing runs only".
-              # If it's processing, it might be running NOW (concurrency).
-              # But we have no concurrency. So it's a stale lock.
-              # For safety, without resume flag, we might skip or process.
-              # Let's assume skip unless resume is on.
+              action["should_process"] = False
               action["reason"] = f"Status {status} (use --resume to reset)"
 
     return action

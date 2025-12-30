@@ -8,6 +8,21 @@ This pipeline now supports resilient processing with automatic retries and error
 * **Recovery Actions**: Automatically attempts to recover from transient UI glitches (e.g., refreshing the page) within a single attempt.
 * **Attempt Tracking**: Records each attempt as a distinct run in the database, linked to previous attempts.
 
+## Safety Semantics
+
+### Attempt Grouping
+Attempts are tracked per **(Document ID, Pipeline Name)** pair.
+* **Pipeline Name**: Defaults to `gemini-ui-cli`. Changing the pipeline name (e.g., via env vars or code) is treated as a fresh processing context. This effectively **resets the attempt count** to 1 for that document under the new pipeline.
+* **Idempotency**: Retries always create a **new** `ocr_run` row. History is preserved, never overwritten.
+
+### Skipped Items
+Documents marked as `skipped` (e.g., from a previous run) are considered "intentionally ignored".
+* They are **NOT** retried by `--resume` or `--retry-failed`.
+* Use `--force` to explicitly re-process skipped items.
+
+### DB Requirement
+* The `--retry-failed` flag strictly requires a valid database connection (`OCR_DB_DSN`). The CLI will fail fast if the DB is missing.
+
 ## CLI Usage
 
 ### Basic Retry
@@ -29,7 +44,7 @@ python -m src.ocr_gemini.cli \
   --retry-backoff-seconds 10
 ```
 * `--max-attempts N`: Stop retrying after N attempts (default: 3).
-* `--retry-backoff-seconds S`: Wait S seconds before starting a new retry attempt (useful for rate limits, though not for UI sync).
+* `--retry-backoff-seconds S`: Wait S seconds before starting a new retry attempt (useful for rate limits). **Note:** This backoff occurs *between* attempts, never during UI synchronization.
 
 ## Error Handling Policy
 | Error Kind | Examples | Action |

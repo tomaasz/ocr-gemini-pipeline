@@ -66,6 +66,19 @@ def test_decide_fresh_run_retry_failed_only(base_cfg):
     assert action["should_process"] is False
     assert "No prior run" in action["reason"]
 
+def test_decide_pipeline_change_resets_attempts(base_cfg):
+    """
+    Scenario: Pipeline name changed, so repo returned None (no history).
+    This confirms that a 'new' run behavior is triggered, resetting attempt count.
+    """
+    # Simulate repo logic: if pipeline differs, get_latest_run returns None.
+    # So we pass None as last_run.
+    last_run = None
+    action = decide_retry_action(last_run, base_cfg)
+    assert action["should_process"] is True
+    assert action["attempt_no"] == 1
+    assert action["parent_run_id"] is None
+
 def test_decide_already_done(base_cfg):
     """Scenario: Previous run is done."""
     last_run = {"status": "done", "attempt_no": 1, "error_kind": None, "run_id": 10}
@@ -130,15 +143,24 @@ def test_decide_max_attempts_not_reached(base_cfg):
     assert action["should_process"] is True
     assert action["attempt_no"] == 3
 
-def test_decide_resume_skipped(base_cfg):
-    """Scenario: Previously skipped, now resuming."""
+def test_decide_resume_skipped_false(base_cfg):
+    """Scenario: Previously skipped. --resume should NOT retry it (requires force)."""
     base_cfg.resume = True
     last_run = {"status": "skipped", "attempt_no": 1, "error_kind": None, "run_id": 10}
     action = decide_retry_action(last_run, base_cfg)
-    assert action["should_process"] is True
+    assert action["should_process"] is False
+    assert "use --force" in action["reason"]
 
-def test_decide_skipped_no_resume(base_cfg):
-    """Scenario: Previously skipped, no resume flag."""
+def test_decide_force_skipped(base_cfg):
+    """Scenario: Previously skipped. --force SHOULD retry it."""
+    base_cfg.force = True
+    last_run = {"status": "skipped", "attempt_no": 1, "error_kind": None, "run_id": 10}
+    action = decide_retry_action(last_run, base_cfg)
+    assert action["should_process"] is True
+    assert "Force retry" in action["reason"]
+
+def test_decide_skipped_no_flags(base_cfg):
+    """Scenario: Previously skipped, no flags."""
     last_run = {"status": "skipped", "attempt_no": 1, "error_kind": None, "run_id": 10}
     action = decide_retry_action(last_run, base_cfg)
     assert action["should_process"] is False
