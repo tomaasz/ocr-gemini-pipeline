@@ -39,9 +39,12 @@ def _scan_images(input_dir: Path, recursive: bool, limit: int) -> List[Path]:
         for p in input_dir.iterdir():
             if p.is_file() and p.suffix.lower() in IMAGE_EXTS:
                 found.append(p)
-                if lim and len(found) >= lim:
-                    break
-        return sorted(found)
+
+        # Sort ALL found, then slice to ensure deterministic order regardless of FS iteration
+        found.sort()
+        if lim:
+            return found[:lim]
+        return found
 
     # recursive walk
     for root, dirnames, filenames in os.walk(input_dir, followlinks=False):
@@ -52,10 +55,12 @@ def _scan_images(input_dir: Path, recursive: bool, limit: int) -> List[Path]:
             p = Path(root) / fn
             if p.suffix.lower() in IMAGE_EXTS:
                 found.append(p)
-                if lim and len(found) >= lim:
-                    return sorted(found)
 
-    return sorted(found)
+    # Sort ALL found, then slice
+    found.sort()
+    if lim:
+        return found[:lim]
+    return found
 
 
 def main() -> None:

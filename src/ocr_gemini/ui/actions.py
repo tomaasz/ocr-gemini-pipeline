@@ -284,14 +284,16 @@ def _try_filechooser_upload(page: Page, file_path: str, trigger_budget_ms: int) 
     # Regex for the initial button ("Add", "Plus", "Attach")
     rx_btn = re.compile(
         r"(upload|attach|add|file|image|photo|picture|"
-        r"prześlij|przeslij|załącz|zalacz|dodaj|plik|obraz|zdj[eę]cie|grafika)",
+        r"prześlij|przeslij|załącz|zalacz|dodaj|plik|obraz|zdj[eę]cie|grafika|"
+        r"przesyłania|przesylania|wczytaj)",
         re.I,
     )
 
     # Regex for the menu item if the button opens a menu
     rx_menu = re.compile(
         r"(upload|image|photo|picture|computer|device|"
-        r"prześlij|obraz|zdj[eę]cie|komputer|urządzeni)",
+        r"prześlij|przeslij|obraz|zdj[eę]cie|komputer|urządzeni|"
+        r"wczytaj|załącz|zalacz|dodaj)",
         re.I,
     )
 
