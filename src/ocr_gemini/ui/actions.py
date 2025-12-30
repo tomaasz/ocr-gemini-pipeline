@@ -289,8 +289,15 @@ def _try_filechooser_upload(page: Page, file_path: str, trigger_budget_ms: int) 
         re.I,
     )
 
+    # Known labels that explicitly indicate a menu will open (Polish/English)
+    # Using these allows us to skip the direct expect_file_chooser attempt (which timeouts)
+    # and go straight to the menu flow.
+    rx_menu_trigger = re.compile(
+        r"(otw[óo]rz menu|open menu|menu przesyłania)", re.I
+    )
+
     # Regex for the menu item if the button opens a menu
-    rx_menu = re.compile(
+    rx_menu_item = re.compile(
         r"(upload|image|photo|picture|computer|device|"
         r"prześlij|przeslij|obraz|zdj[eę]cie|komputer|urządzeni|"
         r"wczytaj|załącz|zalacz|dodaj)",
@@ -321,41 +328,62 @@ def _try_filechooser_upload(page: Page, file_path: str, trigger_budget_ms: int) 
             if not blob or not rx_btn.search(blob):
                 continue
 
-            # Attempt 1: Direct click expecting file chooser
-            # We use a short timeout because if it's a menu, it will timeout quickly.
-            try:
-                # Short timeout to detect if it's NOT a direct file chooser.
-                # This constant is a probe timeout, not a hard limit for the user.
-                with page.expect_file_chooser(timeout=MENU_DETECTION_TIMEOUT_MS) as fc_info:
-                    el.click(timeout=1000)
+            # Logic: If detection strongly suggests a menu, we skip the direct attempt
+            # to avoid the timeout latency and proceed straight to menu handling.
+            is_explicit_menu = bool(rx_menu_trigger.search(blob))
 
-                chooser = fc_info.value
-                chooser.set_files(file_path)
-                return True
-            except Exception:
-                # If direct upload failed (likely timeout), check if a menu opened
+            if not is_explicit_menu:
+                # Attempt 1: Direct click expecting file chooser
+                # We use a short timeout because if it's a menu, it will timeout quickly.
                 try:
-                    # Look for common menu containers
-                    menu = page.locator(
-                        "div[role='menu'], ul[role='menu'], .mat-mdc-menu-panel, [data-role='menu']"
-                    ).first
-                    if menu.is_visible():
-                        # Search for upload item within the menu
-                        items = menu.locator("[role='menuitem'], button, li")
-                        target = items.filter(has_text=rx_menu).first
-                        if target.is_visible():
-                            with page.expect_file_chooser(
-                                timeout=trigger_budget_ms
-                            ) as fc_info_2:
-                                target.click(timeout=1000)
-                            chooser = fc_info_2.value
-                            chooser.set_files(file_path)
-                            return True
+                    # Short timeout to detect if it's NOT a direct file chooser.
+                    # This constant is a probe timeout, not a hard limit for the user.
+                    with page.expect_file_chooser(
+                        timeout=MENU_DETECTION_TIMEOUT_MS
+                    ) as fc_info:
+                        el.click(timeout=1000)
+
+                    chooser = fc_info.value
+                    chooser.set_files(file_path)
+                    return True
                 except Exception:
+                    # Proceed to fallback (menu check)
                     pass
 
-                # If neither worked, loop continues to next candidate
+            # Fallback (or Primary for known menu triggers): Check if menu opened
+            try:
+                # If we skipped direct attempt, we must click now
+                if is_explicit_menu:
+                    el.click(timeout=1000)
+                    # We expect a menu to appear. Wait for it briefly to ensure it renders.
+                    try:
+                        page.locator(
+                            "div[role='menu'], ul[role='menu'], .mat-mdc-menu-panel, [data-role='menu']"
+                        ).first.wait_for(state="visible", timeout=MENU_DETECTION_TIMEOUT_MS)
+                    except Exception:
+                        pass
+
+                # Look for common menu containers
+                menu = page.locator(
+                    "div[role='menu'], ul[role='menu'], .mat-mdc-menu-panel, [data-role='menu']"
+                ).first
+                if menu.is_visible():
+                    # Search for upload item within the menu
+                    items = menu.locator("[role='menuitem'], button, li")
+                    target = items.filter(has_text=rx_menu_item).first
+                    if target.is_visible():
+                        with page.expect_file_chooser(
+                            timeout=trigger_budget_ms
+                        ) as fc_info_2:
+                            target.click(timeout=1000)
+                        chooser = fc_info_2.value
+                        chooser.set_files(file_path)
+                        return True
+            except Exception:
                 pass
+
+            # If neither worked, loop continues to next candidate
+            pass
 
         except Exception:
             continue

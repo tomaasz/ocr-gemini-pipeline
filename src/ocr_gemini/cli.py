@@ -41,7 +41,8 @@ def _scan_images(input_dir: Path, recursive: bool, limit: int) -> List[Path]:
                 found.append(p)
 
         # Sort ALL found, then slice to ensure deterministic order regardless of FS iteration
-        found.sort()
+        # Requirement: Sort by string form of path to handle subfolders deterministically
+        found.sort(key=str)
         if lim:
             return found[:lim]
         return found
@@ -57,7 +58,8 @@ def _scan_images(input_dir: Path, recursive: bool, limit: int) -> List[Path]:
                 found.append(p)
 
     # Sort ALL found, then slice
-    found.sort()
+    # Requirement: Sort by string form of path to handle subfolders deterministically
+    found.sort(key=str)
     if lim:
         return found[:lim]
     return found
