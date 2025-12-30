@@ -1,85 +1,61 @@
-# OCR Gemini Pipeline (Stage 1.5)
+# Stage 2.0: Retry & Recovery
 
-Modular OCR pipeline using Gemini, designed for genealogy documents.
-Currently in **Stage 1.5** (DB Write-back, Idempotency, and Resume).
+This pipeline now supports resilient processing with automatic retries and error recovery.
 
-## Documentation
+## Features
+* **Deterministic Retries**: Safely retry failed documents without duplication.
+* **Error Classification**: Distinguishes between `transient` (retryable) and `permanent` (fatal) errors.
+* **Recovery Actions**: Automatically attempts to recover from transient UI glitches (e.g., refreshing the page) within a single attempt.
+* **Attempt Tracking**: Records each attempt as a distinct run in the database, linked to previous attempts.
 
-- [**Run & Verification Guide**](docs/run.md) – **Start Here.** How to configure, run, and verify the pipeline.
-- [**MANIFEST.md**](docs/MANIFEST.md) – Project contract, architecture, and design rules.
-- [**TESTING.md**](docs/TESTING.md) – Testing strategy and instructions.
-- [**Deployment Reference**](docs/reference/ENVIRONMENT_UBUNTUOVH.md) – Example deployment (Ubuntu OVH).
+## Safety Semantics
 
-## Project Structure
+### Attempt Grouping
+Attempts are tracked per **(Document ID, Pipeline Name)** pair.
+* **Pipeline Name**: Defaults to `gemini-ui-cli`. Changing the pipeline name (e.g., via env vars or code) is treated as a fresh processing context. This effectively **resets the attempt count** to 1 for that document under the new pipeline.
+* **Idempotency**: Retries always create a **new** `ocr_run` row. History is preserved, never overwritten.
 
-```
-ocr-gemini-pipeline/
-├── src/ocr_gemini/     # Source code
-│   ├── engine/         # Core engine logic & Playwright adapter
-│   ├── ui/             # UI actions & helpers
-│   ├── db/             # Database repository & config
-│   ├── cli.py          # CLI entry point
-│   └── ...
-├── tests/              # Unit & smoke tests
-├── docs/               # Documentation & Snapshots
-├── sql/                # SQL Migrations
-├── legacy/             # Reference to old codebase (read-only)
-└── pyproject.toml      # Build configuration
-```
+### Skipped Items
+Documents marked as `skipped` (e.g., from a previous run) are considered "intentionally ignored".
+* They are **NOT** retried by `--resume` or `--retry-failed`.
+* Use `--force` to explicitly re-process skipped items.
 
-## Quick Start (Stage 1.5)
+### DB Requirement
+* The `--retry-failed` flag strictly requires a valid database connection (`OCR_DB_DSN`). The CLI will fail fast if the DB is missing.
 
-Run the pipeline using the CLI:
+## CLI Usage
 
+### Basic Retry
+Retry only documents that failed in previous runs (and are eligible for retry):
 ```bash
-# Basic usage with DB write-back (requires OCR_DB_DSN)
-export OCR_DB_DSN="postgresql://user:pass@host:5432/dbname"
-python -m ocr_gemini.cli \
-  --input-dir ./images \
-  --out-dir ./output \
-  --profile-dir ./chrome-profile \
-  --limit 2
-
-# Resume failed/interrupted run
-python -m ocr_gemini.cli \
-  --input-dir ./images \
-  --out-dir ./output \
-  --profile-dir ./chrome-profile \
-  --resume
-
-# Force re-processing of already done files
-python -m ocr_gemini.cli \
-  --input-dir ./images \
-  --out-dir ./output \
-  --profile-dir ./chrome-profile \
-  --force
+python -m src.ocr_gemini.cli \
+  --input-dir ... --out-dir ... --profile-dir ... \
+  --retry-failed
 ```
+This will check the database for failed runs and retry them if they were transient or unknown errors.
 
-**Note:** You must sign in to Gemini manually in the browser window during the first run (or launch browser separately with same profile). The pipeline assumes a signed-in state.
+### Advanced Configuration
+Control the retry behavior:
+```bash
+python -m src.ocr_gemini.cli \
+  ... \
+  --retry-failed \
+  --max-attempts 5 \
+  --retry-backoff-seconds 10
+```
+* `--max-attempts N`: Stop retrying after N attempts (default: 3).
+* `--retry-backoff-seconds S`: Wait S seconds before starting a new retry attempt (useful for rate limits). **Note:** This backoff occurs *between* attempts, never during UI synchronization.
 
-### DB Write-back & Idempotency
-- **Success Definition**: A run is considered successful only if `ocr_run.status == 'done'`.
-- **Idempotency**: By default, documents with a successful run are skipped (status recorded as `skipped`).
-- **Resume**: `--resume` processes only documents that do not have a successful run (i.e. failed or never processed).
-- **Force**: `--force` processes documents regardless of previous status, creating a new run.
+## Error Handling Policy
+| Error Kind | Examples | Action |
+|------------|----------|--------|
+| `transient` | Timeouts, Network glitches, Detached elements | Retry up to limit |
+| `permanent` | File missing, Auth required, Invalid format | Fail immediately (do not retry) |
+| `unknown` | Unclassified exceptions | Retry (treated as transient) |
 
-## Debugging
-
-*   **Debug Artifacts**: Screenshots and HTML are saved to `--out-dir/debug` (or specified `--debug-dir`) upon failure.
-*   **Sequential Execution**: The pipeline processes images one by one, ensuring the previous generation is complete before starting the next.
-
-## Reliability Helpers
-
-Reusable, pure-logic helpers are available in `src/ocr_gemini/utils.py` to improve stability without coupling to Playwright:
-
-*   **`retry_call`**: Retries a function with backoff on specific exceptions.
-*   **`wait_for_generation_complete`**: Generic polling for process completion (e.g. generation).
-
-These helpers abstract the retry/wait logic found in the legacy codebase.
-
-## Stage 2: Playwright Engine (In Progress)
-
-The `PlaywrightEngine` (Stage 1.5) now drives a real browser instance sequentially with DB persistence.
-Future improvements will focus on:
-- Robustness (auto-recovery).
-- Advanced error handling.
+## Database Schema Changes
+`ocr_run` table now includes:
+* `attempt_no`: The attempt number (1-based).
+* `parent_run_id`: Link to the previous failed run.
+* `error_kind`: Classification of the failure.
+* `retry_after_seconds`: Optional delay (if recorded).

@@ -45,6 +45,19 @@ class PlaywrightEngine(OcrEngine):
         """Stops the browser session."""
         self.session.stop()
 
+    def recover(self) -> None:
+        """
+        Attempts to recover the session from a transient error state.
+        Currently implements a simple page reload.
+        """
+        if self.session.page:
+            try:
+                self.session.page.reload()
+            except Exception as e:
+                # If reload fails, we might need to restart browser,
+                # but let's keep it bounded to reload for now.
+                raise RuntimeError(f"Recovery (reload) failed: {e}") from e
+
     def ocr(self, image_path: Path, prompt_id: str) -> OcrResult:
         """
         Perform OCR on a given image using the Playwright-driven UI.

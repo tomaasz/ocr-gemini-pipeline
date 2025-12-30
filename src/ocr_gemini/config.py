@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 
 def _get_int(env_var: str, default: int) -> int:
@@ -58,3 +58,9 @@ class PipelineConfig:
     # Stage 1.5+
     resume: bool = False
     force: bool = False
+
+    # Stage 2.0
+    retry_failed: bool = False
+    max_attempts: int = 3
+    retry_backoff_seconds: int = 0
+    retry_error_kinds: List[str] = field(default_factory=lambda: ["transient", "unknown"])
