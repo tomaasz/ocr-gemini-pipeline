@@ -49,9 +49,12 @@ Configuration options for debugging failures:
     *   Example: `export OCR_DEBUG_DIR="./debug_artifacts"`
 *   **`OCR_UI_TIMEOUT_MS`**: Global timeout for UI operations (default: 180,000 ms).
     *   *Note: Currently plumbing only. Will be wired to Playwright engine in future stages.*
+*   **`workers`** (Config param): Number of concurrent browser workers to use (default: 1).
+    *   Configurable in `PlaywrightEngine` to enable parallel processing of items.
 
 ### Legacy Evidence (Reference)
 
+*   Legacy `gemini_ocr.py` lines 902 and 946 supported concurrency via external process orchestration (`OCR_WORKER_ID`).
 *   Legacy `gemini_ocr.py` used `--debug-dir` to dump screenshots on `cleanup_failed`, `extract_response_failed`, etc.
 *   Legacy timeouts were hardcoded or passed via CLI args (e.g. `--timeout-ms`).
 
