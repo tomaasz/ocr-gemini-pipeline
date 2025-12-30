@@ -1,7 +1,7 @@
 import pytest
 import time
 from unittest.mock import Mock, call
-from src.ocr_gemini.utils import retry_call, wait_for_generation_complete
+from ocr_gemini.utils import retry_call, wait_for_generation_complete
 
 class MyError(Exception):
     pass
