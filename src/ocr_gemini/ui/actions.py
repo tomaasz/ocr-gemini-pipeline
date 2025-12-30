@@ -30,6 +30,14 @@ class UIActionTimeoutError(UIActionError):
     pass
 
 
+class ImageUploadFailed(UIActionError):
+    """Raised when image upload fails (no path found or no success signal)."""
+    pass
+
+
+MENU_DETECTION_TIMEOUT_MS = 2000
+
+
 def _find_composer(page: Page, timeout_ms: int = 2000) -> Locator:
     """
     Locates the contenteditable composer div.
@@ -271,18 +279,23 @@ def _assert_on_gemini_chat(page: Page) -> None:
 
 def _try_filechooser_upload(page: Page, file_path: str, trigger_budget_ms: int) -> bool:
     """
-    Próbujemy znaleźć przycisk/ikonę, która otwiera FileChooser.
-    Zamiast kilku sztywnych selectorów – robimy skan po button / role=button
-    i szukamy po aria-label/title/tekście.
+    Attempts to trigger upload via file chooser, handling both direct buttons and menu-based flows.
     """
-    rx = re.compile(
+    # Regex for the initial button ("Add", "Plus", "Attach")
+    rx_btn = re.compile(
         r"(upload|attach|add|file|image|photo|picture|"
         r"prześlij|przeslij|załącz|zalacz|dodaj|plik|obraz|zdj[eę]cie|grafika)",
         re.I,
     )
 
-    root = _composer_root(page)
+    # Regex for the menu item if the button opens a menu
+    rx_menu = re.compile(
+        r"(upload|image|photo|picture|computer|device|"
+        r"prześlij|obraz|zdj[eę]cie|komputer|urządzeni)",
+        re.I,
+    )
 
+    root = _composer_root(page)
     candidates = root.locator("button, [role='button']")
     n = min(candidates.count(), 320)
 
@@ -292,26 +305,56 @@ def _try_filechooser_upload(page: Page, file_path: str, trigger_budget_ms: int) 
             if not el.is_visible():
                 continue
 
+            # Check if button matches "Add/Attach" logic
             aria = (el.get_attribute("aria-label") or "").strip()
             title = (el.get_attribute("title") or "").strip()
             txt = ""
             try:
                 txt = (el.inner_text() or "").strip()
             except Exception:
-                txt = ""
-
-            blob = " ".join([aria, title, txt]).strip()
-            if not blob or not rx.search(blob):
-                # czasem label jest na child (svg/span) – próbujemy jeszcze has_text
                 pass
 
-            # jeśli coś pasuje, próbujemy FileChooser
-            if rx.search(blob):
-                with page.expect_file_chooser(timeout=trigger_budget_ms) as fc_info:
-                    el.click()
+            blob = " ".join([aria, title, txt]).strip()
+
+            if not blob or not rx_btn.search(blob):
+                continue
+
+            # Attempt 1: Direct click expecting file chooser
+            # We use a short timeout because if it's a menu, it will timeout quickly.
+            try:
+                # Short timeout to detect if it's NOT a direct file chooser.
+                # This constant is a probe timeout, not a hard limit for the user.
+                with page.expect_file_chooser(timeout=MENU_DETECTION_TIMEOUT_MS) as fc_info:
+                    el.click(timeout=1000)
+
                 chooser = fc_info.value
                 chooser.set_files(file_path)
                 return True
+            except Exception:
+                # If direct upload failed (likely timeout), check if a menu opened
+                try:
+                    # Look for common menu containers
+                    menu = page.locator(
+                        "div[role='menu'], ul[role='menu'], .mat-mdc-menu-panel, [data-role='menu']"
+                    ).first
+                    if menu.is_visible():
+                        # Search for upload item within the menu
+                        items = menu.locator("[role='menuitem'], button, li")
+                        target = items.filter(has_text=rx_menu).first
+                        if target.is_visible():
+                            with page.expect_file_chooser(
+                                timeout=trigger_budget_ms
+                            ) as fc_info_2:
+                                target.click(timeout=1000)
+                            chooser = fc_info_2.value
+                            chooser.set_files(file_path)
+                            return True
+                except Exception:
+                    pass
+
+                # If neither worked, loop continues to next candidate
+                pass
+
         except Exception:
             continue
 
@@ -347,17 +390,17 @@ def upload_image(
     )
 
     def _wait_for_preview(deadline_ms: int) -> None:
-        t0 = time.time()
-        last_err = None
-        while (time.time() - t0) * 1000 < deadline_ms:
-            try:
-                loc = page.locator(preview_selector).first
-                if loc.count() > 0 and loc.is_visible():
-                    return
-            except Exception as e:
-                last_err = e
-            page.wait_for_timeout(200)
-        raise UIActionTimeoutError(f"Upload preview not detected. last_err={last_err!r}")
+        try:
+            # Use wait_for(state="visible") for reliable state-based wait
+            # rather than blind sleeps or polling loops.
+            page.locator(preview_selector).first.wait_for(
+                state="visible", timeout=deadline_ms
+            )
+        except Exception as e:
+            raise ImageUploadFailed(
+                f"Upload triggered but success signal (preview) did not appear within {deadline_ms}ms. "
+                f"Last error: {e}"
+            )
 
     try:
         _assert_on_gemini_chat(page)
@@ -388,13 +431,17 @@ def upload_image(
             except Exception:
                 continue
 
-        raise UIActionTimeoutError(
-            "Nie udało się znaleźć ani FileChooser (przycisku upload), ani input[type=file]."
+        raise ImageUploadFailed(
+            f"Could not establish upload path. Attempted: Direct FileChooser (timeout {MENU_DETECTION_TIMEOUT_MS}ms), "
+            "Menu 'Upload image' item, and input[type=file] fallback."
         )
 
+    except ImageUploadFailed:
+        save_debug_artifacts(page, debug_dir, "upload_failed_explicit")
+        raise
     except Exception as e:
-        save_debug_artifacts(page, debug_dir, "upload_failed")
-        raise UIActionError(f"Failed to upload image {image_path.name}: {e}") from e
+        save_debug_artifacts(page, debug_dir, "upload_failed_unexpected")
+        raise ImageUploadFailed(f"Failed to upload image {image_path.name}: {e}") from e
 
 
 def get_last_response(page: Page) -> str:
